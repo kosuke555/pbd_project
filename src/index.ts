@@ -4,6 +4,7 @@ import { ParticleData, set_mass } from './ParticleData';
 import { ParticleMesh, build_particle_mesh, update_face_normals, update_vertex_normals } from './ParticleMesh';
 import { Constraint, create_distance_constraint } from './Constraints';
 import { set_vec3_gen, copy_vec3_gen, add_to_vec3_gen, mul_scalar_vec3_gen, sub_vec3_gen, mul_scalar_to_vec3 } from './math';
+import CanvasRecorder from './CanvasRecorder';
 
 const ClothWidth = 5;
 const ClothHeight = 5;
@@ -37,6 +38,8 @@ document.addEventListener('DOMContentLoaded', () => {
     renderer.setPixelRatio(window.devicePixelRatio);
     renderer.setSize(width, height);
     document.body.appendChild(renderer.domElement);
+
+    const recorder = CanvasRecorder.createFromUrlParams(renderer.domElement, document.location.href);
     
     const camera = new three.PerspectiveCamera(45, width / height, 1, 1000);
     camera.position.set(1, 0.5, 1).setLength(15);
@@ -74,6 +77,7 @@ document.addEventListener('DOMContentLoaded', () => {
         handle_resize(camera, renderer);
     });
 
+    recorder && recorder.start();
     render();
 });
 
