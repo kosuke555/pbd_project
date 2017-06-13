@@ -1,7 +1,7 @@
 import 'mocha';
 import * as assert from 'power-assert';
-import { ParticleData } from '../src/ParticleData';
-import { ParticleMesh, Edge, build_particle_mesh } from '../src/ParticleMesh';
+import { ParticleData } from '../src/simulation/ParticleData';
+import { ParticleMesh, Edge, build_particle_mesh } from '../src/simulation/ParticleMesh';
 
 describe('ParticleMesh', () => {
     describe('#build_particle_mesh', () => {

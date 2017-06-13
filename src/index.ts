@@ -1,10 +1,11 @@
 import * as three from 'three';
 import * as Stats from 'stats.js';
-import { ParticleData, set_mass } from './ParticleData';
-import { ParticleMesh, build_particle_mesh, update_face_normals, update_vertex_normals } from './ParticleMesh';
-import { Constraint, create_distance_constraint } from './Constraints';
-import { set_vec3_gen, copy_vec3_gen, add_to_vec3_gen, mul_scalar_vec3_gen, sub_vec3_gen, mul_scalar_to_vec3 } from './math';
-import CanvasRecorder from './CanvasRecorder';
+import { ParticleData, set_mass } from './simulation/ParticleData';
+import { ParticleMesh, build_particle_mesh, update_face_normals, update_vertex_normals } from './simulation/ParticleMesh';
+import { Constraint, create_distance_constraint } from './simulation/Constraints';
+import { set_vec3_gen, copy_vec3_gen, add_to_vec3_gen,
+    mul_scalar_vec3_gen, sub_vec3_gen, mul_scalar_to_vec3 } from './simulation/math';
+import CanvasRecorder from './utils/CanvasRecorder';
 
 const ClothWidth = 5;
 const ClothHeight = 5;
