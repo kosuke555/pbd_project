@@ -5,10 +5,10 @@
   "browser": "build/bundle.js",
   "typings": "src/index.ts",
   "scripts": {
-    "build": "webpack --env",
-    "release": "webpack --env.production",
-    "clean": "rimraf build",
-    "test": "mocha --compilers ts:espower-typescript/guess test/**/*.ts"
+    "build": "tsc && rollup -c",
+    "release": "tsc && rollup -c && uglifyjs build/bundle.js -cm -o build/bundle.min.js",
+    "clean": "rimraf build tmp",
+    "test": "tsc -p test/tsconfig.test.json && mocha tmp/test/**/*.js"
   },
   "author": "kosuke.horichi@gmail.com",
   "license": "UNLICENSED",
@@ -17,14 +17,14 @@
     "@types/mocha": "^2.2.41",
     "@types/power-assert": "^1.4.29",
     "@types/three": "^0.84.8",
-    "espower-typescript": "^8.0.0",
     "mocha": "^3.4.2",
     "power-assert": "^1.4.2",
     "rimraf": "^2.6.1",
+    "rollup": "^0.43.0",
+    "rollup-plugin-node-resolve": "^3.0.0",
     "stats.js": "^0.17.0",
     "three": "^0.85.2",
-    "ts-loader": "^2.1.0",
     "typescript": "^2.3.3",
-    "webpack": "^2.6.1"
+    "uglify-es": "^3.0.15"
   }
 }

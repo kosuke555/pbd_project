@@ -1,5 +1,5 @@
 import * as three from 'three';
-import * as Stats from 'stats.js';
+import Stats from 'stats.js';
 import { ParticleData, set_mass } from './simulation/ParticleData';
 import { ParticleMesh, build_particle_mesh, update_face_normals, update_vertex_normals } from './simulation/ParticleMesh';
 import { Constraint, create_distance_constraint } from './simulation/Constraints';
