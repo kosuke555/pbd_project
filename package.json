@@ -16,15 +16,15 @@
   "devDependencies": {
     "@types/mocha": "^2.2.41",
     "@types/power-assert": "^1.4.29",
-    "@types/three": "^0.84.8",
+    "@types/three": "^0.84.18",
     "mocha": "^3.4.2",
-    "power-assert": "^1.4.2",
+    "power-assert": "^1.4.4",
     "rimraf": "^2.6.1",
-    "rollup": "^0.43.0",
+    "rollup": "^0.45.2",
     "rollup-plugin-node-resolve": "^3.0.0",
     "stats.js": "^0.17.0",
-    "three": "^0.85.2",
-    "typescript": "^2.3.3",
-    "uglify-es": "^3.0.15"
+    "three": "^0.86.0",
+    "typescript": "^2.4.1",
+    "uglify-es": "^3.0.25"
   }
 }
