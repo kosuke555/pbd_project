@@ -18,5 +18,24 @@ export default [
             }
         })],
         sourceMap: true
+    },
+    {
+        entry: 'tmp/src/index-mmd.js',
+        dest: 'build/bundle-mmd.js',
+        format: 'iife',
+        external: ['THREE'],
+        plugins: [resolve({
+            customResolveOptions: {
+                packageFilter: pkg => {
+                    if (pkg.name === 'stats.js') {
+                        pkg.main = 'src/Stats.js';
+                    } else if (pkg.module) {
+                        pkg.main = pkg.module;
+                    }
+                    return pkg;
+                }
+            }
+        })],
+        sourceMap: true
     }
 ];
