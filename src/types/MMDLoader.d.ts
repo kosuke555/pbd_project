@@ -1,40 +1,29 @@
 import * as three from 'three';
 
-declare global {
-    namespace THREE {
+declare module 'three' {
 
-        export class MMDLoader extends three.Loader {
-            constructor(manager?: three.LoadingManager);
+    export class MMDLoader extends three.Loader {
+        constructor(manager?: three.LoadingManager);
 
-            load(modelUrl: string, vmdUrls: string[], callback: (mesh: three.Mesh) => void,
-                onProgress?: (event: ProgressEvent) => void, onError?: (event: ErrorEvent) => void): void;
-        }
-
-        export interface MMDPhysicsParams {
-            unitStep?: number;
-            maxStepNum?: number;
-            world?: any;
-        }
-
-        export class MMDHelper {
-            constructor();
-
-            add(mesh: three.Mesh): void;
-            setAnimation(mesh: three.Mesh): void;
-            setPhysics(mesh: three.Mesh,
-                params?: { warmup?: number, preventAnimationWarmup?: boolean } & MMDPhysicsParams): void;
-            unifyAnimationDuration(params?: { afterglow?: number }): void;
-            animate(delta: number): void;
-        }
-        
-        // work around
-        export type WebGLRenderer = three.WebGLRenderer;
-        export type Scene = three.Scene;
-        export type Camera = three.Camera;
-        export type Geometry = three.Geometry;
-        export type BufferGeometry = three.BufferGeometry;
-        export type Material = three.Material;
-        export type Group = three.Group;
-
+        load(modelUrl: string, vmdUrls: string[], callback: (mesh: three.Mesh) => void,
+            onProgress?: (event: ProgressEvent) => void, onError?: (event: ErrorEvent) => void): void;
     }
+
+    export interface MMDPhysicsParams {
+        unitStep?: number;
+        maxStepNum?: number;
+        world?: any;
+    }
+
+    export class MMDHelper {
+        constructor();
+
+        add(mesh: three.Mesh): void;
+        setAnimation(mesh: three.Mesh): void;
+        setPhysics(mesh: three.Mesh,
+            params?: { warmup?: number, preventAnimationWarmup?: boolean } & MMDPhysicsParams): void;
+        unifyAnimationDuration(params?: { afterglow?: number }): void;
+        animate(delta: number): void;
+    }
+
 }

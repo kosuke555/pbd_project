@@ -26,7 +26,7 @@ document.addEventListener('DOMContentLoaded', () => {
     camera.position.set(1, 1, 1).setLength(30);
     camera.lookAt(new three.Vector3(0, 10, 0));
 
-    const mmd_helper = new THREE.MMDHelper();
+    const mmd_helper = new three.MMDHelper();
     const scene = build_scene(mmd_helper);
 
     const render = () => {
@@ -55,10 +55,10 @@ function handle_resize(camera: three.PerspectiveCamera, renderer: three.WebGLRen
     camera.aspect = width / height;
 }
 
-function build_scene(helper: THREE.MMDHelper): three.Scene {
+function build_scene(helper: three.MMDHelper): three.Scene {
     const scene = new three.Scene();
 
-    const loader = new THREE.MMDLoader();
+    const loader = new three.MMDLoader();
     loader.load(DefaultMMDModel, [DefaultMMDMotion], mesh => {
         scene.add(mesh);
         helper.add(mesh);
