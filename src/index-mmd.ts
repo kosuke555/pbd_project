@@ -1,5 +1,6 @@
 import * as three from 'three';
 import Stats from 'stats.js';
+import Ammo from 'ammo.js';
 import CanvasRecorder from './utils/CanvasRecorder';
 
 const TimeStep = 1/60;
@@ -63,7 +64,7 @@ function build_scene(helper: three.MMDHelper): three.Scene {
         scene.add(mesh);
         helper.add(mesh);
         helper.setAnimation(mesh);
-        helper.setPhysics(mesh);
+        helper.setPhysics(mesh, { world: build_physics_world() });
         helper.unifyAnimationDuration({ afterglow: 2.0 });
     });
 
@@ -74,4 +75,28 @@ function build_scene(helper: three.MMDHelper): three.Scene {
     scene.add(ambient);
 
     return scene;
+}
+
+function build_physics_world() {
+    const config = new Ammo.btDefaultCollisionConfiguration();
+    const dispatcher = new Ammo.btCollisionDispatcher( config );
+    const cache = new Ammo.btDbvtBroadphase();
+    const solver = new Ammo.btSequentialImpulseConstraintSolver();
+    const world = new Ammo.btDiscreteDynamicsWorld( dispatcher, cache, solver, config );
+    world.setGravity( new Ammo.btVector3( 0, -9.8 * 10, 0 ) );
+
+    const form = new Ammo.btTransform();
+    form.setIdentity();
+    form.setOrigin(new Ammo.btVector3(0, -1, 0));
+    const ground = new Ammo.btRigidBody(
+        new Ammo.btRigidBodyConstructionInfo(
+            0,
+            new Ammo.btDefaultMotionState(form),
+            new Ammo.btBoxShape(new Ammo.btVector3(10, 1, 10)),
+            new Ammo.btVector3(0, 0, 0)
+        )
+    );
+    world.addRigidBody(ground);
+    
+    return world;
 }

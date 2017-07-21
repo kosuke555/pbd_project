@@ -11,8 +11,8 @@ export default [
         entry: 'tmp/src/index-mmd.js',
         dest: 'build/bundle-mmd.js',
         format: 'iife',
-        external: ['three', 'stats.js'],
-        globals: { three: 'THREE', 'stats.js': 'Stats' },
+        external: ['three', 'stats.js', 'ammo.js'],
+        globals: { three: 'THREE', 'stats.js': 'Stats', 'ammo.js': 'Ammo' },
         sourceMap: true
     }
 ];
