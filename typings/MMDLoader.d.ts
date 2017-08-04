@@ -18,10 +18,16 @@ declare module 'three' {
     export class MMDHelper {
         constructor();
 
+        doAnimation: boolean;
+        doIk: boolean;
+        doGrant: boolean;
+        doCameraAnimation: boolean;
+
         add(mesh: three.Mesh): void;
         setAnimation(mesh: three.Mesh): void;
         setPhysics(mesh: three.Mesh,
             params?: { warmup?: number, preventAnimationWarmup?: boolean } & MMDPhysicsParams): void;
+        enablePhysics(enabled: boolean): void;
         unifyAnimationDuration(params?: { afterglow?: number }): void;
         animate(delta: number): void;
     }

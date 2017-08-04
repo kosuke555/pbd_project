@@ -3,7 +3,6 @@
   "version": "1.0.0",
   "description": "My first PBD project.",
   "browser": "build/bundle.js",
-  "typings": "src/index.ts",
   "scripts": {
     "build": "tsc && rollup -c",
     "release": "tsc && rollup -c && uglifyjs build/bundle.js -cm -o build/bundle.min.js",

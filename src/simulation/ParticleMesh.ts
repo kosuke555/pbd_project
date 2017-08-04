@@ -1,19 +1,21 @@
+import { IndexArrayType, NormalArrayType, ParticlePositionType } from '../types';
 import { ParticleData } from './ParticleData';
 import { copy_vec3_gen, sub_vec3, cross_vec3, normalize_vec3_gen, add_to_vec3_gen } from './math';
+import { get_constructor } from '../utils/typedarray_utils';
 
 export interface Edge {
-    vertices: Uint32Array;
-    faces: Uint32Array;
+    vertex_pair: IndexArrayType;
+    face_pair: Uint32Array;
 }
 
 export interface ParticleMesh {
-    indices: Uint32Array;
-    edges: Edge[];
-    face_normals: Float32Array;
-    vertex_normals: Float32Array;
+    indices: IndexArrayType;
+    edges: Readonly<Edge>[];
+    face_normals: NormalArrayType;
+    vertex_normals: NormalArrayType;
 }
 
-export function build_particle_mesh(particles: ParticleData, indices: Uint32Array): ParticleMesh {
+export function build_particle_mesh(particles: ParticleData, indices: IndexArrayType): Readonly<ParticleMesh> {
     const num_faces = indices.length / 3;
     const overlapped_edges = [...Array(num_faces).keys()]  // 0..(num of faces - 1)
     .map(index => [
@@ -23,6 +25,7 @@ export function build_particle_mesh(particles: ParticleData, indices: Uint32Arra
     ])
     .reduce((a, b) => a.concat(b));  // flatten
 
+    const indices_ctor = get_constructor(indices);
     const p_edges = new Map<number, Edge[]>();
     const edges = [] as Edge[];
     for (let i = 0, len = overlapped_edges.length; i < len; ++i) {
@@ -32,13 +35,13 @@ export function build_particle_mesh(particles: ParticleData, indices: Uint32Arra
         const edge = find_edge(p_edges, a, b);
         if (!edge) {
             const new_edge = {
-                vertices: new Uint32Array([a, b]),
-                faces: new Uint32Array([face_id, 0xffffffff])
+                vertex_pair: new indices_ctor([a, b]),
+                face_pair: new Uint32Array([face_id, 0xffffffff])
             };
             edges.push(new_edge);
             add_edge_to_map(p_edges, a, b, new_edge);
         } else {
-            edge.faces[1] = face_id;
+            edge.face_pair[1] = face_id;
         }
     }
 
@@ -56,7 +59,7 @@ const p_b = new Float32Array(3);
 const p_c = new Float32Array(3);
 const v1 = new Float32Array(3);
 const v2 = new Float32Array(3);
-export function update_face_normals(positions: Float32Array, indices: Uint32Array, normals: Float32Array) {
+export function update_face_normals(positions: ParticlePositionType, indices: IndexArrayType, face_normals: NormalArrayType) {
     const num_faces = indices.length / 3;
     for (let i = 0; i < num_faces; ++i) {
         copy_vec3_gen(p_a, 0, positions, indices[i * 3]);
@@ -64,13 +67,13 @@ export function update_face_normals(positions: Float32Array, indices: Uint32Arra
         copy_vec3_gen(p_c, 0, positions, indices[i * 3 + 2]);
         sub_vec3(p_b, p_a, v1, 0);
         sub_vec3(p_c, p_a, v2, 0);
-        cross_vec3(v1, v2, normals, i);
-        normalize_vec3_gen(normals, i);
+        cross_vec3(v1, v2, face_normals, i);
+        normalize_vec3_gen(face_normals, i);
     }
 }
 
 const n = new Float32Array(3);
-export function update_vertex_normals(face_normals: Float32Array, indices: Uint32Array, vertex_normals: Float32Array) {
+export function update_vertex_normals(face_normals: NormalArrayType, indices: IndexArrayType, vertex_normals: NormalArrayType) {
     for (let i = 0, len = vertex_normals.length; i < len; ++i) {
         vertex_normals[i] = 0;
     }
@@ -93,8 +96,8 @@ function find_edge(vertex_edge_map: Map<number, Edge[]>, a: number, b: number) {
     if (vertex_edge_map.has(a)) {
         const edges = vertex_edge_map.get(a)!;
         for (let i = 0, len = edges.length; i < len; ++i) {
-            if ((edges[i].vertices[0] === a && edges[i].vertices[1] === b) ||
-            (edges[i].vertices[0] === b && edges[i].vertices[1] === a)) {
+            if ((edges[i].vertex_pair[0] === a && edges[i].vertex_pair[1] === b) ||
+            (edges[i].vertex_pair[0] === b && edges[i].vertex_pair[1] === a)) {
                 return edges[i];
             }
         }

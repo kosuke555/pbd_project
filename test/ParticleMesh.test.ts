@@ -1,6 +1,6 @@
 import 'mocha';
 import * as assert from 'power-assert';
-import { ParticleData } from '../src/simulation/ParticleData';
+import { create_particle_data } from '../src/simulation/ParticleData';
 import { ParticleMesh, Edge, build_particle_mesh } from '../src/simulation/ParticleMesh';
 
 describe('ParticleMesh', () => {
@@ -19,7 +19,7 @@ describe('ParticleMesh', () => {
          *  v6|／v7|／v8|
          *    *----*----*
          */
-        const particles = new ParticleData(3 * 3);
+        const particles = create_particle_data(3 * 3);
         const indices = [0, 3, 1, 1, 3, 4, 1, 4, 2, 2, 4, 5, 3, 6, 4, 4, 6, 7, 4, 7, 5, 5, 7, 8];
         const edges = [
             [0, 3], [3, 1], [1, 0], [3, 4],
@@ -35,8 +35,8 @@ describe('ParticleMesh', () => {
         it('should return the mesh that has 8 faces', () => {
             const valid_face_ids = [0xffffffff, 0, 1, 2, 3, 4, 5, 6, 7];
             mesh.edges.forEach(edge => {
-                assert(valid_face_ids.findIndex(id => id === edge.faces[0]) !== -1);
-                assert(valid_face_ids.findIndex(id => id === edge.faces[1]) !== -1);
+                assert(valid_face_ids.findIndex(id => id === edge.face_pair[0]) !== -1);
+                assert(valid_face_ids.findIndex(id => id === edge.face_pair[1]) !== -1);
             });
         });
         it('should not return the mesh that has duplication edge', () => {
@@ -62,13 +62,13 @@ function count(edges: Edge[], pred: (e: Edge) => boolean) {
 }
 
 function has_vertices(vertex_a: number, vertex_b: number) {
-    return (edge: Edge) => (edge.vertices[0] === vertex_a && edge.vertices[1] === vertex_b) ||
-        (edge.vertices[0] === vertex_b && edge.vertices[1] === vertex_a);
+    return (edge: Edge) => (edge.vertex_pair[0] === vertex_a && edge.vertex_pair[1] === vertex_b) ||
+        (edge.vertex_pair[0] === vertex_b && edge.vertex_pair[1] === vertex_a);
 }
 
 function has_faces(face_a: number, face_b: number) {
-    return (edge: Edge) => (edge.faces[0] === face_a && edge.faces[1] === face_b) ||
-        (edge.faces[0] === face_b && edge.faces[1] === face_a);
+    return (edge: Edge) => (edge.face_pair[0] === face_a && edge.face_pair[1] === face_b) ||
+        (edge.face_pair[0] === face_b && edge.face_pair[1] === face_a);
 }
 
 function find_edge(edges: Edge[], vertex_a: number, vertex_b: number) {

@@ -1,31 +1,27 @@
 import * as three from 'three';
 import Stats from 'stats.js';
-import { ParticleData, set_mass } from './simulation/ParticleData';
-import { ParticleMesh, build_particle_mesh, update_face_normals, update_vertex_normals } from './simulation/ParticleMesh';
-import { Constraint, create_distance_constraint } from './simulation/Constraints';
-import { set_vec3_gen, copy_vec3_gen, add_to_vec3_gen,
-    mul_scalar_vec3_gen, sub_vec3_gen, mul_scalar_to_vec3 } from './simulation/math';
+import { VertexArrayType, IndexArrayType } from './types';
+import ClothModel from './simulation/ClothModel';
+import { create_particle_data, init_position, set_mass } from './simulation/ParticleData';
+import { build_particle_mesh, update_face_normals, update_vertex_normals } from './simulation/ParticleMesh';
+import { create_distance_constraint } from './simulation/constraints';
+import { step } from './simulation/time_integrator';
 import CanvasRecorder from './utils/CanvasRecorder';
 
 const ClothWidth = 5;
 const ClothHeight = 5;
 const ClothParticleCols = 50;
 const ClothParticleRows = 50;
+
+const TimeStep = 1/60;
+const StepIteration = 4;
+const MaxProjectionIteration = 5;
+
+const Gravity = -9.81;
 const ClothCompressionStiffness = 1.0;
 const ClothStretchStiffness = 1.0;
 
-const TimeStepSize = 0.004;
-const StepIteration = 4;
-const Gravity = -9.81;
-const MaxProjectionIteration = 5;
-
 const WireframeRendering = false;
-
-interface ClothModel {
-    particles: ParticleData;
-    mesh: ParticleMesh;
-    constraints: Constraint[];
-}
 
 document.addEventListener('DOMContentLoaded', () => {
     const width = window.innerWidth;
@@ -54,18 +50,27 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const scene = build_scene(positions, vertex_normals, indices);
     const geometry = (scene.children[0] as three.Mesh).geometry as three.BufferGeometry;
-    const posAttr = geometry.getAttribute('position') as three.BufferAttribute;
-    const normalAttr = geometry.getAttribute('normal') as three.BufferAttribute;
+    const pos_attr = geometry.getAttribute('position') as three.BufferAttribute;
+    const normal_attr = geometry.getAttribute('normal') as three.BufferAttribute;
 
     const render = () => {
         stats.begin();
 
-        step(model);
+        step(model, {
+            step_iter: StepIteration,
+            max_proj_iter: MaxProjectionIteration,
+            time_step: TimeStep,
+            gravity: Gravity,
+            stiffnesses: {
+                compression: ClothCompressionStiffness,
+                stretch: ClothStretchStiffness
+            }
+        });
 
         update_face_normals(positions, indices, face_normals);
         update_vertex_normals(face_normals, indices, vertex_normals);
-        posAttr.needsUpdate = true;
-        normalAttr.needsUpdate = true;
+        pos_attr.needsUpdate = true;
+        normal_attr.needsUpdate = true;
 
         renderer.render(scene, camera);
 
@@ -89,10 +94,14 @@ function handle_resize(camera: three.PerspectiveCamera, renderer: three.WebGLRen
     camera.aspect = width / height;
 }
 
-function build_scene(vertices: Float32Array, normals: Float32Array, indices: Uint32Array): three.Scene {
+function build_scene(vertices: VertexArrayType, normals: Float32Array, indices: IndexArrayType): three.Scene {
     const geometry = new three.BufferGeometry();
-    geometry.addAttribute('position', new three.BufferAttribute(vertices, 3));
-    geometry.addAttribute('normal', new three.BufferAttribute(normals, 3));
+    const pos_attr = new three.BufferAttribute(vertices, 3);
+    pos_attr.setDynamic(true);
+    geometry.addAttribute('position', pos_attr);
+    const normal_attr = new three.BufferAttribute(normals, 3);
+    normal_attr.setDynamic(true);
+    geometry.addAttribute('normal', normal_attr);
     geometry.setIndex(new three.BufferAttribute(indices, 1));
     const material = new three.MeshStandardMaterial({
         color: 0x820202, emissive: new three.Color(0x7c0808),
@@ -122,16 +131,15 @@ function build_scene(vertices: Float32Array, normals: Float32Array, indices: Uin
     return scene;
 }
 
-function build_model(n_cols: number, n_rows: number, width: number, height: number): ClothModel {
-    const particles = new ParticleData(n_cols * n_rows);
+function build_model(n_cols: number, n_rows: number, width: number, height: number): Readonly<ClothModel> {
+    const particles = create_particle_data(n_cols * n_rows);
     const dx = width / (n_cols - 1);
     const dy = height / (n_rows - 1);
 
     for (let i = 0; i < n_rows; ++i) {
         for (let j = 0; j < n_cols; ++j) {
             const index = i * n_cols + j;
-            set_vec3_gen(particles.position, index, dx * j, 0.0, dy * i);
-            copy_vec3_gen(particles.old_position, index, particles.position, index);
+            init_position(particles, index, dx * j, 0.0, dy * i);
             set_mass(particles, index, 1.0);
         }
     }
@@ -151,55 +159,7 @@ function build_model(n_cols: number, n_rows: number, width: number, height: numb
 
     const mesh = build_particle_mesh(particles, indices);
 
-    const constraints = mesh.edges.map(e => create_distance_constraint(particles, e.vertices[0], e.vertices[1]));
+    const constraints = mesh.edges.map(e => create_distance_constraint(particles, e.vertex_pair[0], e.vertex_pair[1]));
 
     return { particles, mesh, constraints };
-}
-
-function step(model: ClothModel) {
-    const n_particle = model.particles.length;
-    const position = model.particles.position;
-    const old_position = model.particles.old_position;
-    const velocity = model.particles.velocity;
-    const mass = model.particles.mass;
-    const inv_mass = model.particles.inv_mass;
-
-    for (let i = 0; i < StepIteration; ++i) {
-        internal_step(n_particle, position, old_position, velocity, mass, inv_mass, model.constraints);
-    }
-}
-
-const d_vec = new Float32Array(3);
-const stiffness = { compression: ClothCompressionStiffness, stretch: ClothStretchStiffness };
-function internal_step(n_particle: number, position: Float32Array, old_position: Float32Array,
-    velocity: Float32Array, mass: Float32Array, inv_mass: Float32Array, constraints: Constraint[]) {
-
-    for (let i = 0, len = position.length; i < len; ++i) {
-        old_position[i] = position[i];
-    }
-
-    // position predictions
-    for (let i = 0; i < n_particle; ++i) {
-        if (mass[i] !== 0.0) {
-            velocity[i * 3 + 1] += Gravity * TimeStepSize;
-            mul_scalar_vec3_gen(velocity, i, TimeStepSize, d_vec, 0);
-            add_to_vec3_gen(position, i, d_vec, 0);
-        }
-    }
-
-    // project constraints
-    for (let i = 0; i < MaxProjectionIteration; ++i) {
-        for (let j = 0, len = constraints.length; j < len; ++j) {
-            constraints[j].solver(constraints[j], position, inv_mass, stiffness);
-        }
-    }
-
-    // update velocities
-    for (let i = 0; i < n_particle; ++i) {
-        if (mass[i] !== 0.0) {
-            sub_vec3_gen(position, i, old_position, i, d_vec, 0);
-            mul_scalar_to_vec3(d_vec, 1.0 / TimeStepSize);
-            copy_vec3_gen(velocity, i, d_vec, 0);
-        }
-    }
 }
