@@ -5,7 +5,7 @@
   "browser": "build/bundle.js",
   "scripts": {
     "build": "tsc && rollup -c",
-    "release": "tsc && rollup -c && uglifyjs build/bundle.js -cm -o build/bundle.min.js",
+    "minify": "tsc && rollup -c && uglifyjs build/bundle-cloth.js -cm -o build/bundle-cloth.min.js && uglifyjs build/bundle-mmd.js -cm -o build/bundle-mmd.min.js",
     "clean": "rimraf build tmp",
     "test": "tsc -p test/tsconfig.test.json && mocha tmp/test/**/*.js"
   },

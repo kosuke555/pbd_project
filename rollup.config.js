@@ -1,7 +1,7 @@
 export default [
     {
         entry: 'tmp/src/index-cloth.js',
-        dest: 'build/bundle.js',
+        dest: 'build/bundle-cloth.js',
         format: 'iife',
         external: ['three', 'stats.js'],
         globals: { three: 'THREE', 'stats.js': 'Stats' },
