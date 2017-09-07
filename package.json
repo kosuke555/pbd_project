@@ -15,12 +15,12 @@
   "devDependencies": {
     "@types/mocha": "^2.2.41",
     "@types/power-assert": "^1.4.29",
-    "@types/three": "^0.84.18",
+    "@types/three": "^0.84.26",
     "mocha": "^3.4.2",
     "power-assert": "^1.4.4",
     "rimraf": "^2.6.1",
     "rollup": "^0.45.2",
-    "typescript": "^2.4.1",
+    "typescript": "^2.5.3",
     "uglify-es": "^3.0.25"
   }
 }

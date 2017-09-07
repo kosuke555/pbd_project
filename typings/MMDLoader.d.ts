@@ -36,6 +36,7 @@ declare module 'three' {
 
     export interface MMDMesh extends three.SkinnedMesh {
         geometry: three.BufferGeometry & MMDData;
+        material: three.MeshBasicMaterial[];
     }
 
     export class MMDLoader extends three.Loader {
