@@ -1,6 +1,6 @@
 import * as three from 'three';
 import Stats from 'stats.js';
-import Ammo from 'ammo.js';
+import * as ammo from 'ammo.js';
 import { VertexArrayType, IndexArrayType, NormalArrayType, SkinIndexArrayType, WeightArrayType, ParticlePositionType } from './types';
 import ClothModel from './simulation/ClothModel';
 import { ParticleData, create_particle_data, reset_particle_data, init_position, set_mass } from './simulation/ParticleData';
@@ -65,76 +65,27 @@ document.addEventListener('DOMContentLoaded', async () => {
     const mmd_helper = new three.MMDHelper();
 
     const scene = await build_scene(mmd_helper);
-    const mmd_mesh = scene.getObjectByName(MMDModelMeshName) as three.SkinnedMesh;
-    const geometry = mmd_mesh.geometry as three.BufferGeometry;
-    const pos_attr = geometry.getAttribute('position') as three.BufferAttribute;
-    const pos_buffer = pos_attr.array as VertexArrayType;
-    const normal_attr = geometry.getAttribute('normal') as three.BufferAttribute;
-    const normal_buffer = normal_attr.array as NormalArrayType;
+    const mmd_mesh = scene.getObjectByName(MMDModelMeshName) as
+        three.MMDMesh & three.AdditionalMMDAnimationData & three.AdditionalMMDPhysicsData;
     
     const model = build_model(mmd_mesh);
     const particles = model.particles;
     const positions = model.particles.position;
-    const masses = model.particles.mass;
-    const mesh_indices = model.mesh.indices;
-    const face_normals = model.mesh.face_normals;
-    const vertex_normals = model.mesh.vertex_normals;
-    const attachments = model.attachments;
-    const vertex_particle_pairs = model.pairs;
 
     const initial_positions = positions.slice();
-    ((<any>mmd_mesh).mixer as three.AnimationMixer).addEventListener('loop', _ => {
+    mmd_mesh.mixer.addEventListener('loop', _ => {
         reset_particle_data(particles, initial_positions);
     });
 
-    const points = particle_helper(particles);
-    scene.add(points);
-    const points_geo = points.geometry as three.BufferGeometry;
-    const points_attr = points_geo.getAttribute('position') as three.BufferAttribute;
-
-    const render = () => {
-        stats.begin();
-
-        mmd_helper.animate(TimeStep);
-
-        // Force update the matrixWorld of the individual bones,
-        // for updating position of attached particles.
-        mmd_mesh.updateMatrixWorld(true);
-        update_attached_particle(particles, attachments, mmd_mesh.skeleton);
-
-        step(model, {
-            step_iter: StepIteration,
-            max_proj_iter: MaxProjectionIteration,
-            time_step: TimeStep,
-            gravity: Gravity,
-            stiffnesses: {
-                compression: ClothCompressionStiffness,
-                stretch: ClothStretchStiffness
-            }
-        });
-
-        update_face_normals(positions, mesh_indices, face_normals);
-        update_vertex_normals(face_normals, mesh_indices, vertex_normals);
-
-        update_vertex_attributes(pos_buffer, positions, normal_buffer, vertex_normals, masses, vertex_particle_pairs);
-        pos_attr.needsUpdate = true;
-        normal_attr.needsUpdate = true;
-
-        points_attr.needsUpdate = true;
-
-        renderer.render(scene, camera);
-
-        stats.end();
-
-        requestAnimationFrame(render);
-    };
+    const debug_points = particle_helper(particles);
+    scene.add(debug_points);
 
     window.addEventListener('resize', () => {
         handle_resize(camera, renderer);
     });
 
     recorder && recorder.start();
-    render();
+    create_runner({ stats, renderer, scene, camera, mmd_helper, model, debug_points })();
 });
 
 function handle_resize(camera: three.PerspectiveCamera, renderer: three.WebGLRenderer) {
@@ -159,15 +110,14 @@ function build_scene(helper: three.MMDHelper) {
             mesh.name = MMDModelMeshName;
             mesh.matrixAutoUpdate = false;
             
-            const geometry = mesh.geometry as three.BufferGeometry;
+            const geometry = mesh.geometry;
             (geometry.getAttribute('position') as three.BufferAttribute).setDynamic(true);
             (geometry.getAttribute('normal') as three.BufferAttribute).setDynamic(true);
 
             // Since the result of the simulation is written directly to the vertex buffer,
             // it conflicts with morphing animation.
             // TODO: Find a solution other than deleting morphing animation.
-            const animations = (<any>geometry).animations as three.AnimationClip[];
-            (<any>geometry).animations = animations.filter(c => !is_morph_animation_clip(c));
+            geometry.animations = geometry.animations.filter(c => !is_morph_animation_clip(c));
 
             scene.add(mesh);
             helper.add(mesh);
@@ -200,6 +150,7 @@ function build_model(mmd_mesh: three.SkinnedMesh): Readonly<ClothModel> & Readon
     const pairs = { vertex_idx_list, particle_idx_list, length: n_particle };
 
     const particles = create_particle_data(n_particle);
+    // TODO: Consider the case where mmd_mesh.matrixWorld is not an identity matrix
     copy_particle_positions_from_vertices(particles, vertices, pairs);
 
     const attachments = find_attached_particles(vertices, skin_indices, skin_weights, pairs);
@@ -229,27 +180,102 @@ function particle_helper(particles: ParticleData): three.Points {
     return new three.Points(geometry, material);
 }
 
+function create_runner(environment: {
+        stats: Stats,
+        renderer: three.WebGLRenderer,
+        scene: three.Scene,
+        camera: three.Camera,
+        mmd_helper: three.MMDHelper,
+        model: Readonly<ClothModel> & Readonly<MappingInfo>,
+        debug_points: three.Points
+    }) {
+
+    const stats = environment.stats;
+    const renderer = environment.renderer;
+    const scene = environment.scene;
+    const camera = environment.camera;
+    const mmd_helper = environment.mmd_helper;
+    const mmd_mesh = scene.getObjectByName(MMDModelMeshName) as three.MMDMesh;
+    const geometry = mmd_mesh.geometry;
+    const pos_attr = geometry.getAttribute('position') as three.BufferAttribute;
+    const pos_buffer = pos_attr.array as VertexArrayType;
+    const normal_attr = geometry.getAttribute('normal') as three.BufferAttribute;
+    const normal_buffer = normal_attr.array as NormalArrayType;
+
+    const model = environment.model;
+    const particles = model.particles;
+    const positions = model.particles.position;
+    const masses = model.particles.mass;
+    const mesh_indices = model.mesh.indices;
+    const face_normals = model.mesh.face_normals;
+    const vertex_normals = model.mesh.vertex_normals;
+    const attachments = model.attachments;
+    const vertex_particle_pairs = model.pairs;
+
+    const debug_points_geo = environment.debug_points.geometry as three.BufferGeometry;
+    const debug_points_attr = debug_points_geo.getAttribute('position') as three.BufferAttribute;
+
+    const runner = () => {
+        stats.begin();
+
+        mmd_helper.animate(TimeStep);
+
+        // Force update the matrixWorld of the individual bones,
+        // for updating position of attached particles.
+        mmd_mesh.updateMatrixWorld(true);
+        update_attached_particle(particles, attachments, mmd_mesh.skeleton);
+
+        step(model, {
+            step_iter: StepIteration,
+            max_proj_iter: MaxProjectionIteration,
+            time_step: TimeStep,
+            gravity: Gravity,
+            stiffnesses: {
+                compression: ClothCompressionStiffness,
+                stretch: ClothStretchStiffness
+            }
+        });
+
+        update_face_normals(positions, mesh_indices, face_normals);
+        update_vertex_normals(face_normals, mesh_indices, vertex_normals);
+
+        update_vertex_attributes(pos_buffer, positions, normal_buffer, vertex_normals, masses, vertex_particle_pairs);
+        pos_attr.needsUpdate = true;
+        normal_attr.needsUpdate = true;
+
+        debug_points_attr.needsUpdate = true;
+
+        renderer.render(scene, camera);
+
+        stats.end();
+
+        requestAnimationFrame(runner);
+    };
+
+    return runner;
+}
+
 function is_morph_animation_clip(clip: three.AnimationClip) {
     return ( clip.tracks.length > 0 && clip.tracks[ 0 ].name.indexOf( '.morphTargetInfluences' ) === 0 );
 }
 
-function build_physics_world() {
-    const config = new Ammo.btDefaultCollisionConfiguration();
-    const dispatcher = new Ammo.btCollisionDispatcher( config );
-    const cache = new Ammo.btDbvtBroadphase();
-    const solver = new Ammo.btSequentialImpulseConstraintSolver();
-    const world = new Ammo.btDiscreteDynamicsWorld( dispatcher, cache, solver, config );
-    world.setGravity( new Ammo.btVector3( 0, -9.8 * 10, 0 ) );
+function build_physics_world(): ammo.btDiscreteDynamicsWorld {
+    const config = new ammo.btDefaultCollisionConfiguration();
+    const dispatcher = new ammo.btCollisionDispatcher(config);
+    const cache = new ammo.btDbvtBroadphase();
+    const solver = new ammo.btSequentialImpulseConstraintSolver();
+    const world = new ammo.btDiscreteDynamicsWorld(dispatcher, cache, solver, config);
+    world.setGravity( new ammo.btVector3( 0, -9.8 * 10, 0 ) );
 
-    const form = new Ammo.btTransform();
+    const form = new ammo.btTransform();
     form.setIdentity();
-    form.setOrigin(new Ammo.btVector3(0, -1, 0));
-    const ground = new Ammo.btRigidBody(
-        new Ammo.btRigidBodyConstructionInfo(
+    form.setOrigin(new ammo.btVector3(0, -1, 0));
+    const ground = new ammo.btRigidBody(
+        new ammo.btRigidBodyConstructionInfo(
             0,
-            new Ammo.btDefaultMotionState(form),
-            new Ammo.btBoxShape(new Ammo.btVector3(10, 1, 10)),
-            new Ammo.btVector3(0, 0, 0)
+            new ammo.btDefaultMotionState(form),
+            new ammo.btBoxShape(new ammo.btVector3(10, 1, 10)),
+            new ammo.btVector3(0, 0, 0)
         )
     );
     world.addRigidBody(ground);
