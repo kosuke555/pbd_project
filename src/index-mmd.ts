@@ -43,6 +43,8 @@ interface MappingInfo {
     pairs: VertexParticlePairs;
 }
 
+type LoadedMMDMesh = three.MMDMesh & three.AdditionalMMDAnimationData & three.AdditionalMMDPhysicsData;
+
 document.addEventListener('DOMContentLoaded', async () => {
     const width = window.innerWidth;
     const height = window.innerHeight;
@@ -57,17 +59,17 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.body.appendChild(renderer.domElement);
 
     const recorder = CanvasRecorder.createFromUrlParams(renderer.domElement, document.location.href);
-    
+
     const camera = new three.PerspectiveCamera(45, width / height, 1, 1000);
     camera.position.set(1, 1, 1).setLength(30);
     camera.lookAt(new three.Vector3(0, 10, 0));
 
-    const mmd_helper = new three.MMDHelper();
+    const scene = build_scene();
 
-    const scene = await build_scene(mmd_helper);
-    const mmd_mesh = scene.getObjectByName(MMDModelMeshName) as
-        three.MMDMesh & three.AdditionalMMDAnimationData & three.AdditionalMMDPhysicsData;
-    
+    const mmd_helper = new three.MMDHelper();
+    const mmd_mesh = await load_mmd_mesh(DefaultMMDModel, DefaultMMDMotion, mmd_helper);
+    scene.add(mmd_mesh);
+
     const model = build_model(mmd_mesh);
     const particles = model.particles;
     const positions = model.particles.position;
@@ -85,7 +87,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
 
     recorder && recorder.start();
-    create_runner({ stats, renderer, scene, camera, mmd_helper, model, debug_points })();
+    create_loop_runner({ stats, renderer, scene, camera, mmd_helper, model, debug_points })();
 });
 
 function handle_resize(camera: three.PerspectiveCamera, renderer: three.WebGLRenderer) {
@@ -95,18 +97,23 @@ function handle_resize(camera: three.PerspectiveCamera, renderer: three.WebGLRen
     camera.aspect = width / height;
 }
 
-function build_scene(helper: three.MMDHelper) {
-    return new Promise<three.Scene>((resolve, reject) => {
-        const scene = new three.Scene();
-        
-        const light = new three.DirectionalLight(0x887766);
-        light.position.set(-1, 1, 1).normalize();
-        const ambient = new three.AmbientLight(0x666666);
-        scene.add(light);
-        scene.add(ambient);
+function build_scene() {
+    const scene = new three.Scene();
+    
+    const light = new three.DirectionalLight(0x887766);
+    light.position.set(-1, 1, 1).normalize();
+    scene.add(light);
 
+    const ambient = new three.AmbientLight(0x666666);
+    scene.add(ambient);
+
+    return scene;
+}
+
+function load_mmd_mesh(model_path: string, motion_path: string, helper: three.MMDHelper) {
+    return new Promise<LoadedMMDMesh>((resolve, reject) => {
         const loader = new three.MMDLoader();
-        loader.load(DefaultMMDModel, [DefaultMMDMotion], mesh => {
+        loader.load(model_path, [motion_path], mesh => {
             mesh.name = MMDModelMeshName;
             mesh.matrixAutoUpdate = false;
             
@@ -119,13 +126,12 @@ function build_scene(helper: three.MMDHelper) {
             // TODO: Find a solution other than deleting morphing animation.
             geometry.animations = geometry.animations.filter(c => !is_morph_animation_clip(c));
 
-            scene.add(mesh);
             helper.add(mesh);
             helper.setAnimation(mesh);
             helper.setPhysics(mesh, { world: build_physics_world() });
             helper.unifyAnimationDuration({ afterglow: 0.0 });
 
-            resolve(scene);
+            resolve(mesh as LoadedMMDMesh);
 
         }, undefined, reject);
     });
@@ -180,7 +186,7 @@ function particle_helper(particles: ParticleData): three.Points {
     return new three.Points(geometry, material);
 }
 
-function create_runner(environment: {
+function create_loop_runner(environment: {
         stats: Stats,
         renderer: three.WebGLRenderer,
         scene: three.Scene,
