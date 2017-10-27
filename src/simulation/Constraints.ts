@@ -1,6 +1,6 @@
+import { ParticlePositionType } from '../types';
 import { ParticleData } from './ParticleData';
-import { distance_vectors_vec3, copy_vec3_gen, sub_vec3, length_vec3,
-    set_vec3, mul_scalar_to_vec3, mul_scalar_vec3, add_vec3 } from './math';
+import { distance_vectors_vec3 } from './math';
 
 export type Constraint = DistanceConstraint;
 
@@ -9,8 +9,12 @@ export interface Stiffnesses {
     stretch: number;
 }
 
-export type SolverFunction = (constraint: Constraint, positions: Float32Array,
+export type SolverFunction = (constraint: Constraint, positions: ParticlePositionType,
     inv_mass: Float32Array, stiffnesses: Stiffnesses) => boolean;
+
+/*
+ * Distance Constraint
+ */
 
 export interface DistanceConstraint {
     rest_len: number;
@@ -25,7 +29,7 @@ export function create_distance_constraint(particles: ParticleData, particle1: n
 }
 
 const sqrt = Math.sqrt;
-export function solve_distance_constraint(constraint: DistanceConstraint, positions: Float32Array,
+export function solve_distance_constraint(constraint: DistanceConstraint, positions: ParticlePositionType,
     inv_mass: Float32Array, stiffnesses: { compression: number, stretch: number }) {
 
     const p1 = constraint.particle1;
@@ -72,42 +76,122 @@ export function solve_distance_constraint(constraint: DistanceConstraint, positi
     return true;
 }
 
-const p1 = new Float32Array(3);
-const p2 = new Float32Array(3);
-const d_vec = new Float32Array(3);
-const n_vec = new Float32Array(3);
-const c_vec = new Float32Array(3);
-export function solve_distance_constraint2(constraint: DistanceConstraint, positions: Float32Array,
-    inv_mass: Float32Array, stiffnesses: { compression: number, stretch: number }) {
+/*
+ * Contact Constraint
+ */
 
-    const p1_index = constraint.particle1;
-    const p2_index = constraint.particle2;
-    const rest_len = constraint.rest_len;
-    const imass1 = inv_mass[p1_index];
-    const imass2 = inv_mass[p2_index];
-    const sum_imass = imass1 + imass2;
-
-    if (sum_imass == 0.0) return false;
-
-    copy_vec3_gen(p1, 0, positions, p1_index);
-    copy_vec3_gen(p2, 0, positions, p2_index);
-    sub_vec3(p2, p1, d_vec, 0);
-    const d = length_vec3(d_vec);
-
-    set_vec3(n_vec, d_vec[0] / d, d_vec[1] / d, d_vec[2] / d);
-
-    const stiff = d < rest_len ? stiffnesses.compression : stiffnesses.stretch;
-    const a = stiff * (d - rest_len) / sum_imass;
-    mul_scalar_to_vec3(n_vec, a);
-
-    if (imass1 !== 0.0) {
-        mul_scalar_vec3(n_vec, imass1, c_vec);
-        add_vec3(p1, c_vec, positions, p1_index);
-    }
-    if (imass2 !== 0.0) {
-        mul_scalar_vec3(n_vec, -imass2, c_vec);
-        add_vec3(p2, c_vec, positions, p2_index);
-    }
-
-    return true;
+export interface ContactConstraint {
+    particle: number;
+    normal: Float32Array;
+    contact_point: Float32Array;
+    contact_normal: Float32Array;
 }
+
+export function create_contact_constraint(particle: number, norm: number[], c_point: number[], c_norm: number[]): ContactConstraint {
+    const normal = new Float32Array(norm);
+    const contact_point = new Float32Array(c_point);
+    const contact_normal = new Float32Array(c_norm);
+
+    return { particle, normal, contact_point, contact_normal };
+}
+
+export function solve_contact_constraint(constraint: ContactConstraint,
+    positions: ParticlePositionType, inv_mass: Float32Array) {
+
+    const p = constraint.particle;
+    if (inv_mass[p] === 0.0) return;
+
+    const C = contact_constraint_func(constraint, positions);
+    if (C >= 0.0) return;
+
+    const p_x = positions[p * 3];
+    const p_y = positions[p * 3 + 1];
+    const p_z = positions[p * 3 + 2];
+    const normals = constraint.normal;
+    const nx = normals[0];
+    const ny = normals[1];
+    const nz = normals[2];
+    positions[p * 3] = p_x - C * nx;
+    positions[p * 3 + 1] = p_y - C * ny;
+    positions[p * 3 + 2] = p_z - C * nz;
+}
+
+export function prestabilize_contact_constraint(constraint: ContactConstraint, positions: ParticlePositionType,
+    delta_positions: ParticlePositionType, n_collisions: Uint8Array, inv_mass: Float32Array) {
+
+    const p = constraint.particle;
+    if (inv_mass[p] === 0.0) return;
+
+    const C = contact_constraint_func(constraint, positions);
+    if (C >= 0.0) return;
+
+    const normals = constraint.normal;
+    const nx = normals[0];
+    const ny = normals[1];
+    const nz = normals[2];
+    delta_positions[p * 3] += -C * nx;
+    delta_positions[p * 3 + 1] += -C * ny;
+    delta_positions[p * 3 + 2] += -C * nz;
+    ++n_collisions[p];
+}
+
+function contact_constraint_func(constraint: ContactConstraint, positions: ParticlePositionType) {
+    const p = constraint.particle;
+    const p_x = positions[p * 3];
+    const p_y = positions[p * 3 + 1];
+    const p_z = positions[p * 3 + 2];
+    const contact_point = constraint.contact_point;
+    const cp_x = contact_point[0];
+    const cp_y = contact_point[1];
+    const cp_z = contact_point[2];
+    const contact_normal = constraint.contact_normal;
+    const cn_x = contact_normal[0];
+    const cn_y = contact_normal[1];
+    const cn_z = contact_normal[2];
+
+    return (p_x - cp_x) * cn_x + (p_y - cp_y) * cn_y + (p_z - cp_z) * cn_z;
+}
+
+// export interface ContactConstraints {
+//     particles: IndexArrayType;
+//     normals: Float32Array;
+//     contact_points: Float32Array;
+//     contact_normals: Float32Array;
+//     length: number;
+// }
+
+// export function create_contact_constraints(n_constraints: number, indices_ctor: TypedArrayConstructor<IndexArrayType>): ContactConstraints {
+//     const particles = new indices_ctor(n_constraints);
+//     const normals = new Float32Array(n_constraints * 3);
+//     const contact_points = new Float32Array(n_constraints * 3);
+//     const contact_normals = new Float32Array(n_constraints * 3);
+
+//     return { particles, normals, contact_points, contact_normals, length: n_constraints };
+// }
+
+// export function project_contact_constraint(constraints: ContactConstraints, positions: ParticlePositionType, inv_mass: Float32Array) {
+//     for (let i = 0, len = constraints.length; i < len; ++i) {
+//         const pi = constraints.particles[i];
+//         if (inv_mass[pi] === 0.0) return;
+//         const pi_x = positions[pi * 3];
+//         const pi_y = positions[pi * 3 + 1];
+//         const pi_z = positions[pi * 3 + 2];
+//         const normals = constraints.normals;
+//         const nx = normals[i * 3];
+//         const ny = normals[i * 3 + 1];
+//         const nz = normals[i * 3 + 2];
+//         const contact_points = constraints.contact_points;
+//         const cp_x = contact_points[i * 3];
+//         const cp_y = contact_points[i * 3 + 1];
+//         const cp_z = contact_points[i * 3 + 2];
+//         const contact_normals = constraints.contact_normals;
+//         const cn_x = contact_normals[i * 3];
+//         const cn_y = contact_normals[i * 3 + 1];
+//         const cn_z = contact_normals[i * 3 + 2];
+//         const dot = (pi_x - cp_x) * cn_x + (pi_y - cp_y) * cn_y + (pi_z - cp_z) * cn_z;
+
+//         positions[pi * 3] = pi_x - dot * nx;
+//         positions[pi * 3 + 1] = pi_y - dot * ny;
+//         positions[pi * 3 + 2] = pi_z - dot * nz;
+//     }
+// }

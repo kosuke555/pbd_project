@@ -6,23 +6,50 @@ import ClothModel from './simulation/ClothModel';
 import { ParticleData, create_particle_data, reset_particle_data, init_position, set_mass } from './simulation/ParticleData';
 import { build_particle_mesh, update_face_normals, update_vertex_normals } from './simulation/ParticleMesh';
 import { create_distance_constraint } from './simulation/constraints';
-import { step } from './simulation/time_integrator';
+import { SphereRigidBodies, BoxRigidBodies, CapsuleRigidBodies, PlaneRigidBodies,
+    SphereRigidBodyAccessor, BoxRigidBodyAccessor, CapsuleRigidBodyAccessor,
+    create_sphere_rigid_bodies, create_box_rigid_bodies, create_capsule_rigid_bodies, create_plane_rigid_bodies,
+    sphere_rigid_body_accessor, box_rigid_body_accessor, capsule_rigid_body_accessor, plane_rigid_body_accessor } from './simulation/rigid_bodies';
+import { step, SimulationConfiguration } from './simulation/time_integrator';
+import { to_enumerable } from './utils/transformers';
 import { sub_typed_array, get_constructor } from './utils/typedarray_utils';
 import CanvasRecorder from './utils/CanvasRecorder';
+import { particle_helper, rigid_body_helper } from './utils/debug';
 
 const TimeStep = 1/60;
 const StepIteration = 4;
 const MaxProjectionIteration = 5;
+const PreStabilizationIteration = 1;
+const PhysicsStabilizationTime = 2;
 
-const Gravity = -9.81;
-const ClothCompressionStiffness = 1.0;
-const ClothStretchStiffness = 1.0;
+const Gravity = -9.81 * 14;
+const VelocityDampingFactor = 0.00125;
+const ClothCompressionStiffness = 1;
+const ClothStretchStiffness = 1;
+const ClothMass = 0.001;
 
-const DefaultMMDModel = 'assets/sylvie/sylvie_merged.pmx';
-const DefaultMMDMotion = 'assets/vmd/agura.vmd';
+// const DefaultMMDModel = 'assets/sylvie/sylvie_merged.pmx';
+// const DefaultMMDModel = 'assets/sylvie/sylvie_mod_rb.pmx';
+// const DefaultMMDModel = 'assets/sylvie/sylvie_mod_skirt.pmx';
+// const DefaultMMDModel = 'assets/sylvie/sylvie_mod_skirt_rb.pmx';
+// const DefaultMMDModel = 'assets/sylvie/sylvie_mod_skirt2.pmx';
+// const DefaultMMDModel = 'assets/sylvie/sylvie_mod_skirt2_tess.pmx';
+// const DefaultMMDModel = 'assets/sylvie/sylvie_blender_mod_weight.pmx';
+const DefaultMMDModel = 'assets/sylvie/sylvie_blender_mod_body.pmx';
+// const DefaultMMDMotion = 'assets/vmd/walk.vmd';
+// const DefaultMMDMotion = 'assets/vmd/agura.vmd';
+// const DefaultMMDMotion = 'assets/vmd/turn.vmd';
+// const DefaultMMDMotion = 'assets/vmd/dance.vmd';
+// const DefaultMMDMotion = 'assets/vmd/dance2.vmd';
+// const DefaultMMDMotion = 'assets/vmd/Skip.vmd';
+// const DefaultMMDMotion = 'assets/vmd/Running.vmd';
+const DefaultMMDMotion = 'assets/vmd/AzatokawaiiTurn.vmd';
 const TargetMaterialName = 'スカート';
 
-const MMDModelMeshName = 'mmd_model';
+const WireframeRendering = false;
+const ShowParticlePoint = false;
+const ShowRigidBody = false;
+const ResetParticlesWhenLoopingAnimation = true;
 
 interface AttachedParticles {
     particle_indices: IndexArrayType;
@@ -41,6 +68,16 @@ interface VertexParticlePairs {
 interface MappingInfo {
     attachments: AttachedParticles;
     pairs: VertexParticlePairs;
+}
+
+interface RigidBodySet {
+    spheres: SphereRigidBodies;
+    sphere_accessors: SphereRigidBodyAccessor[];
+    boxes: BoxRigidBodies;
+    box_accessors: BoxRigidBodyAccessor[];
+    capsules: CapsuleRigidBodies;
+    capsule_accessors: CapsuleRigidBodyAccessor[];
+    planes: PlaneRigidBodies;
 }
 
 type LoadedMMDMesh = three.MMDMesh & three.AdditionalMMDAnimationData & three.AdditionalMMDPhysicsData;
@@ -68,26 +105,63 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     const mmd_helper = new three.MMDHelper();
     const mmd_mesh = await load_mmd_mesh(DefaultMMDModel, DefaultMMDMotion, mmd_helper);
+    if (WireframeRendering) {
+        const material_index = get_material_index_by_name(mmd_mesh.material, TargetMaterialName);
+        mmd_mesh.material[material_index].wireframe = true;
+    }
     scene.add(mmd_mesh);
+
+    const rigid_bodies = setup_rigid_bodies(mmd_mesh.physics);
 
     const model = build_model(mmd_mesh);
     const particles = model.particles;
-    const positions = model.particles.position;
 
-    const initial_positions = positions.slice();
-    mmd_mesh.mixer.addEventListener('loop', _ => {
-        reset_particle_data(particles, initial_positions);
-    });
+    const simulation_config = {
+        step_iter: StepIteration,
+        max_proj_iter: MaxProjectionIteration,
+        pre_stabilize_iter: PreStabilizationIteration,
+        time_step: TimeStep,
+        gravity: Gravity,
+        velocity_damp_factor: VelocityDampingFactor,
+        stiffnesses: {
+            compression: ClothCompressionStiffness,
+            stretch: ClothStretchStiffness
+        },
+        collision_tolerances: {
+            sphere: 0,
+            box: 0,
+            capsule: 0,
+            plane: 0
+        }
+    };
+
+    mmd_helper.animate(TimeStep);
+    
+    for (let i = 0; i < (1 / TimeStep) * PhysicsStabilizationTime; ++i) {
+        step(model, rigid_bodies, simulation_config);
+    }
+
+    if (ResetParticlesWhenLoopingAnimation) {
+        const initial_positions = model.particles.position.slice();
+        mmd_mesh.mixer.addEventListener('loop', _ => {
+            reset_particle_data(particles, initial_positions);
+        });
+    }
+
+    const rigid_body_meshes = rigid_body_helper(rigid_bodies);
+    ShowRigidBody && rigid_body_meshes.forEach(mesh => scene.add(mesh));
 
     const debug_points = particle_helper(particles);
-    scene.add(debug_points);
+    ShowParticlePoint && scene.add(debug_points);
 
     window.addEventListener('resize', () => {
         handle_resize(camera, renderer);
     });
 
+    create_loop_runner({ stats, renderer, scene, camera, mmd_helper, mmd_mesh,
+        model, rigid_bodies, simulation_config, debug_points, rigid_body_meshes })();
+
     recorder && recorder.start();
-    create_loop_runner({ stats, renderer, scene, camera, mmd_helper, model, debug_points })();
 });
 
 function handle_resize(camera: three.PerspectiveCamera, renderer: three.WebGLRenderer) {
@@ -114,7 +188,6 @@ function load_mmd_mesh(model_path: string, motion_path: string, helper: three.MM
     return new Promise<LoadedMMDMesh>((resolve, reject) => {
         const loader = new three.MMDLoader();
         loader.load(model_path, [motion_path], mesh => {
-            mesh.name = MMDModelMeshName;
             mesh.matrixAutoUpdate = false;
             
             const geometry = mesh.geometry;
@@ -137,14 +210,12 @@ function load_mmd_mesh(model_path: string, motion_path: string, helper: three.MM
     });
 }
 
-function build_model(mmd_mesh: three.SkinnedMesh): Readonly<ClothModel> & Readonly<MappingInfo> {
+function build_model(mmd_mesh: three.MMDMesh): Readonly<ClothModel> & Readonly<MappingInfo> {
     const geometry = mmd_mesh.geometry as three.BufferGeometry;
     const vertices = geometry.getAttribute('position').array as VertexArrayType;
     const skin_indices = geometry.getAttribute('skinIndex').array as SkinIndexArrayType;
     const skin_weights = geometry.getAttribute('skinWeight').array as WeightArrayType;
-    const materials = (<any>mmd_mesh.material) as three.Material[];
-    const material_index = get_material_index_by_name(materials, TargetMaterialName);
-    // (materials[material_index] as three.MeshBasicMaterial).wireframe = true;
+    const material_index = get_material_index_by_name(mmd_mesh.material, TargetMaterialName);
     const geo_group = get_buffer_geometry_group_by_material_id(geometry, material_index)!;
     const geo_indices = sub_typed_array(geometry.index.array as IndexArrayType, geo_group.start, geo_group.count);
     const [mesh_indices, vertex_particle_map] = create_particle_mesh_indices(geo_indices);
@@ -162,7 +233,7 @@ function build_model(mmd_mesh: three.SkinnedMesh): Readonly<ClothModel> & Readon
     const attachments = find_attached_particles(vertices, skin_indices, skin_weights, pairs);
 
     for (let i = 0; i < n_particle; ++i) {
-        set_mass(particles, i, 1.0);
+        set_mass(particles, i, ClothMass);
     }
     for (let i = 0, len = attachments.length; i < len; ++i) {
         set_mass(particles, attachments.particle_indices[i], 0.0);
@@ -175,15 +246,105 @@ function build_model(mmd_mesh: three.SkinnedMesh): Readonly<ClothModel> & Readon
     return { particles, mesh: particle_mesh, constraints, attachments, pairs };
 }
 
-function particle_helper(particles: ParticleData): three.Points {
-    const geometry = new three.BufferGeometry();
-    const pos_attr = new three.BufferAttribute(particles.position, 3);
-    pos_attr.setDynamic(true);
-    geometry.addAttribute('position', pos_attr);
-    const colors = particles.mass.reduce((acc, m) => acc.concat(m !== 0.0 ? [1, 0, 0] : [0, 0, 1]), [] as number[]);
-    geometry.addAttribute('color', new three.Float32BufferAttribute(colors, 3));
-    const material = new three.PointsMaterial({ vertexColors: three.VertexColors, size: 0.3 });
-    return new three.Points(geometry, material);
+function setup_rigid_bodies(physics: three.MMDPhysics): RigidBodySet {
+    const mmd_rigid_bodies = physics.bodies;
+
+    const mmd_sphere_bodies = mmd_rigid_bodies.filter(body => body.params.shapeType === 0);
+    const mmd_box_bodies = mmd_rigid_bodies.filter(body => body.params.shapeType === 1);
+    const mmd_capsule_bodies = mmd_rigid_bodies.filter(body => body.params.shapeType === 2);
+
+    const sphere_bodies = create_sphere_rigid_bodies(mmd_sphere_bodies.length);
+    const box_bodies = create_box_rigid_bodies(mmd_box_bodies.length);
+    const capsule_bodies = create_capsule_rigid_bodies(mmd_capsule_bodies.length);
+
+    mmd_sphere_bodies.forEach((mmd_body, i) => {
+        const params = mmd_body.params;
+        const body = sphere_rigid_body_accessor(sphere_bodies, i);
+        body.radius = params.width;
+        sphere_bodies.bodies.push(mmd_body.body);
+    });
+
+    mmd_box_bodies.forEach((mmd_body, i) => {
+        const params = mmd_body.params;
+        const body = box_rigid_body_accessor(box_bodies, i);
+        body.half_width = params.width;
+        body.half_height = params.height;
+        body.half_depth = params.depth;
+        box_bodies.bodies.push(mmd_body.body);
+    });
+
+    mmd_capsule_bodies.forEach((mmd_body, i) => {
+        const params = mmd_body.params;
+        const body = capsule_rigid_body_accessor(capsule_bodies, i);
+        body.radius = params.width;
+        body.length = params.height;
+        capsule_bodies.bodies.push(mmd_body.body);
+    });
+
+    // ground
+    const plane_bodies = create_plane_rigid_bodies(1);
+    const plane_body = plane_rigid_body_accessor(plane_bodies, 0);
+    plane_body.constant = 0;
+    plane_body.set_normal(0, 1, 0);
+
+    const rigid_bodies = {
+        spheres: sphere_bodies,
+        sphere_accessors: [...to_enumerable(sphere_bodies, sphere_rigid_body_accessor)],
+        boxes: box_bodies,
+        box_accessors: [...to_enumerable(box_bodies, box_rigid_body_accessor)],
+        capsules: capsule_bodies,
+        capsule_accessors: [...to_enumerable(capsule_bodies, capsule_rigid_body_accessor)],
+        planes: plane_bodies
+    };
+    update_rigid_body_transform(rigid_bodies);
+
+    return rigid_bodies;
+}
+
+function update_rigid_body_transform(rigid_bodies: RigidBodySet) {
+    const sphere_accessors = rigid_bodies.sphere_accessors;
+    for (let i = 0, len = sphere_accessors.length; i < len; ++i) {
+        const sphere = sphere_accessors[i];
+        const origin = sphere.body.getCenterOfMassTransform().getOrigin();
+        sphere.set_position(origin.x(), origin.y(), origin.z());
+    }
+    const box_accessors = rigid_bodies.box_accessors;
+    for (let i = 0, len = box_accessors.length; i < len; ++i) {
+        const box = box_accessors[i];
+        const transform = box.body.getCenterOfMassTransform();
+        const origin = transform.getOrigin();
+        const basis = transform.getBasis();
+        box.set_position(origin.x(), origin.y(), origin.z());
+        const x_vec = basis.getRow(0);
+        box.set_basis_vector(0, x_vec.x(), x_vec.y(), x_vec.z());
+        const y_vec = basis.getRow(1);
+        box.set_basis_vector(1, y_vec.x(), y_vec.y(), y_vec.z());
+        const z_vec = basis.getRow(2);
+        box.set_basis_vector(2, z_vec.x(), z_vec.y(), z_vec.z());
+        box.calc_inv_basis_matrix();
+    }
+    const capsule_accessors = rigid_bodies.capsule_accessors;
+    for (let i = 0, len = capsule_accessors.length; i < len; ++i) {
+        const capsule = capsule_accessors[i];
+        const transform = capsule.body.getCenterOfMassTransform();
+        const origin = transform.getOrigin();
+        const basis = transform.getBasis();
+        capsule.set_position(origin.x(), origin.y(), origin.z());
+        const x_vec = basis.getRow(0);
+        const m11 = x_vec.x(), m12 = x_vec.y(), m13 = x_vec.z();
+        const y_vec = basis.getRow(1);
+        const m21 = y_vec.x(), m22 = y_vec.y(), m23 = y_vec.z();
+        const z_vec = basis.getRow(2);
+        const m31 = z_vec.x(), m32 = z_vec.y(), m33 = z_vec.z();
+        const t11 = m33 * m22 - m32 * m23;
+        const t12 = m32 * m13 - m33 * m12
+        const t13 = m23 * m12 - m22 * m13;
+        const inv_det = 1 / (m11 * t11 + m21 * t12 + m31 * t13);
+        const dir_x = (m23 * m31 - m21 * m33) * inv_det;
+        const dir_y = (m11 * m33 - m13 * m31 * inv_det);
+        const dir_z = (m13 * m21 - m11 * m23) * inv_det;
+        capsule.set_direction(dir_x, dir_y, dir_z);
+    }
 }
 
 function create_loop_runner(environment: {
@@ -192,8 +353,12 @@ function create_loop_runner(environment: {
         scene: three.Scene,
         camera: three.Camera,
         mmd_helper: three.MMDHelper,
+        mmd_mesh: three.MMDMesh,
         model: Readonly<ClothModel> & Readonly<MappingInfo>,
-        debug_points: three.Points
+        rigid_bodies: RigidBodySet,
+        simulation_config: SimulationConfiguration,
+        debug_points: three.Points,
+        rigid_body_meshes: three.Mesh[]
     }) {
 
     const stats = environment.stats;
@@ -201,7 +366,7 @@ function create_loop_runner(environment: {
     const scene = environment.scene;
     const camera = environment.camera;
     const mmd_helper = environment.mmd_helper;
-    const mmd_mesh = scene.getObjectByName(MMDModelMeshName) as three.MMDMesh;
+    const mmd_mesh = environment.mmd_mesh;
     const geometry = mmd_mesh.geometry;
     const pos_attr = geometry.getAttribute('position') as three.BufferAttribute;
     const pos_buffer = pos_attr.array as VertexArrayType;
@@ -218,29 +383,28 @@ function create_loop_runner(environment: {
     const attachments = model.attachments;
     const vertex_particle_pairs = model.pairs;
 
+    const rigid_bodies = environment.rigid_bodies;
+
+    const simulation_config = environment.simulation_config;
+
     const debug_points_geo = environment.debug_points.geometry as three.BufferGeometry;
     const debug_points_attr = debug_points_geo.getAttribute('position') as three.BufferAttribute;
+
+    const rigid_body_meshes = environment.rigid_body_meshes;
 
     const runner = () => {
         stats.begin();
 
         mmd_helper.animate(TimeStep);
 
+        update_rigid_body_transform(rigid_bodies);
+
         // Force update the matrixWorld of the individual bones,
         // for updating position of attached particles.
         mmd_mesh.updateMatrixWorld(true);
         update_attached_particle(particles, attachments, mmd_mesh.skeleton);
 
-        step(model, {
-            step_iter: StepIteration,
-            max_proj_iter: MaxProjectionIteration,
-            time_step: TimeStep,
-            gravity: Gravity,
-            stiffnesses: {
-                compression: ClothCompressionStiffness,
-                stretch: ClothStretchStiffness
-            }
-        });
+        step(model, rigid_bodies, simulation_config);
 
         update_face_normals(positions, mesh_indices, face_normals);
         update_vertex_normals(face_normals, mesh_indices, vertex_normals);
@@ -250,6 +414,10 @@ function create_loop_runner(environment: {
         normal_attr.needsUpdate = true;
 
         debug_points_attr.needsUpdate = true;
+
+        for (let i = 0, len = rigid_body_meshes.length; i < len; ++i) {
+            rigid_body_meshes[i].userData.update();
+        }
 
         renderer.render(scene, camera);
 
