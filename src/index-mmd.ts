@@ -413,10 +413,14 @@ function create_loop_runner(environment: {
         pos_attr.needsUpdate = true;
         normal_attr.needsUpdate = true;
 
-        debug_points_attr.needsUpdate = true;
+        if (ShowParticlePoint) {
+            debug_points_attr.needsUpdate = true;
+        }
 
-        for (let i = 0, len = rigid_body_meshes.length; i < len; ++i) {
-            rigid_body_meshes[i].userData.update();
+        if (ShowRigidBody) {
+            for (let i = 0, len = rigid_body_meshes.length; i < len; ++i) {
+                rigid_body_meshes[i].userData.update();
+            }
         }
 
         renderer.render(scene, camera);

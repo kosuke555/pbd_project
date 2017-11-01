@@ -1,6 +1,7 @@
 import { ParticlePositionType } from '../types';
 import { ParticleData } from './ParticleData';
 import { distance_vectors_vec3 } from './math';
+import { SimpleAllocator } from '../utils/memory';
 
 export type Constraint = DistanceConstraint;
 
@@ -87,12 +88,33 @@ export interface ContactConstraint {
     contact_normal: Float32Array;
 }
 
-export function create_contact_constraint(particle: number, norm: number[], c_point: number[], c_norm: number[]): ContactConstraint {
-    const normal = new Float32Array(norm);
-    const contact_point = new Float32Array(c_point);
-    const contact_normal = new Float32Array(c_norm);
+export class ContactConstraintAllocator extends SimpleAllocator<ContactConstraint, () => ContactConstraint> {
+    constructor() {
+        super(() => {
+            const buffer = new ArrayBuffer(36);  // 3 float arrays, each has 3 elements
+            return {
+                particle: 0,
+                normal: new Float32Array(buffer, 0, 3),
+                contact_point: new Float32Array(buffer, 12, 3),
+                contact_normal: new Float32Array(buffer, 24, 3)
+            };
+        });
+    }
+}
 
-    return { particle, normal, contact_point, contact_normal };
+export function create_contact_constraint(particle: number, n_x: number, n_y: number, n_z: number,
+    cp_x: number, cp_y: number, cp_z: number, cn_x: number, cn_y: number, cn_z: number, allocator: ContactConstraintAllocator): ContactConstraint {
+
+    const constraint = allocator.get();
+    constraint.particle = particle;
+    const normal = constraint.normal;
+    normal[0] = n_x, normal[1] = n_y, normal[2] = n_z;
+    const contact_point = constraint.contact_point;
+    contact_point[0] = cp_x, contact_point[1] = cp_y, contact_point[2] = cp_z;
+    const contact_normal = constraint.contact_normal;
+    contact_normal[0] = cn_x, contact_normal[1] = cn_y, contact_normal[2] = cn_z;
+
+    return constraint;
 }
 
 export function solve_contact_constraint(constraint: ContactConstraint,
@@ -151,47 +173,3 @@ function contact_constraint_func(constraint: ContactConstraint, positions: Parti
 
     return (p_x - cp_x) * cn_x + (p_y - cp_y) * cn_y + (p_z - cp_z) * cn_z;
 }
-
-// export interface ContactConstraints {
-//     particles: IndexArrayType;
-//     normals: Float32Array;
-//     contact_points: Float32Array;
-//     contact_normals: Float32Array;
-//     length: number;
-// }
-
-// export function create_contact_constraints(n_constraints: number, indices_ctor: TypedArrayConstructor<IndexArrayType>): ContactConstraints {
-//     const particles = new indices_ctor(n_constraints);
-//     const normals = new Float32Array(n_constraints * 3);
-//     const contact_points = new Float32Array(n_constraints * 3);
-//     const contact_normals = new Float32Array(n_constraints * 3);
-
-//     return { particles, normals, contact_points, contact_normals, length: n_constraints };
-// }
-
-// export function project_contact_constraint(constraints: ContactConstraints, positions: ParticlePositionType, inv_mass: Float32Array) {
-//     for (let i = 0, len = constraints.length; i < len; ++i) {
-//         const pi = constraints.particles[i];
-//         if (inv_mass[pi] === 0.0) return;
-//         const pi_x = positions[pi * 3];
-//         const pi_y = positions[pi * 3 + 1];
-//         const pi_z = positions[pi * 3 + 2];
-//         const normals = constraints.normals;
-//         const nx = normals[i * 3];
-//         const ny = normals[i * 3 + 1];
-//         const nz = normals[i * 3 + 2];
-//         const contact_points = constraints.contact_points;
-//         const cp_x = contact_points[i * 3];
-//         const cp_y = contact_points[i * 3 + 1];
-//         const cp_z = contact_points[i * 3 + 2];
-//         const contact_normals = constraints.contact_normals;
-//         const cn_x = contact_normals[i * 3];
-//         const cn_y = contact_normals[i * 3 + 1];
-//         const cn_z = contact_normals[i * 3 + 2];
-//         const dot = (pi_x - cp_x) * cn_x + (pi_y - cp_y) * cn_y + (pi_z - cp_z) * cn_z;
-
-//         positions[pi * 3] = pi_x - dot * nx;
-//         positions[pi * 3 + 1] = pi_y - dot * ny;
-//         positions[pi * 3 + 2] = pi_z - dot * nz;
-//     }
-// }

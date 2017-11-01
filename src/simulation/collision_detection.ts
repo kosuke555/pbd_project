@@ -1,6 +1,6 @@
 import { ParticleData } from './ParticleData';
 import { SphereRigidBodies, BoxRigidBodies, CapsuleRigidBodies, PlaneRigidBodies } from './rigid_bodies';
-import { ContactConstraint, create_contact_constraint } from './constraints';
+import { ContactConstraint, create_contact_constraint, ContactConstraintAllocator } from './constraints';
 import { EPSILON } from './math';
 
 export interface CollisionObjects {
@@ -21,8 +21,8 @@ const sqrt = Math.sqrt;
 const min = Math.min;
 const max = Math.max;
 
-export function generate_collision_constraints(
-    particles: ParticleData, objects: Readonly<CollisionObjects>, tolerances: Readonly<CollisionTolerances>) {
+export function generate_collision_constraints(particles: ParticleData, objects: Readonly<CollisionObjects>,
+    tolerances: Readonly<CollisionTolerances>, allocator: ContactConstraintAllocator) {
 
     const constraints = [] as ContactConstraint[];
     const sphere_bodies = objects.spheres;
@@ -58,72 +58,73 @@ export function generate_collision_constraints(
 
         if (sphere_bodies) {
             generate_sphere_contact_constraint(constraints, i, sphere_bodies,
-                p_x, p_y, p_z, op_x, op_y, op_z, n_x, n_y, n_z, delta_len, sphere_tolerance);
+                p_x, p_y, p_z, op_x, op_y, op_z, n_x, n_y, n_z, delta_len, sphere_tolerance, allocator);
         }
         if (box_bodies) {
             generate_box_contact_constraint(constraints, i, box_bodies,
-                p_x, p_y, p_z, op_x, op_y, op_z, n_x, n_y, n_z, delta_len, box_tolerance);
+                p_x, p_y, p_z, op_x, op_y, op_z, n_x, n_y, n_z, delta_len, box_tolerance, allocator);
         }
         if (capsule_bodies) {
             generate_capsule_contact_constraint(constraints, i, capsule_bodies,
-                p_x, p_y, p_z, op_x, op_y, op_z, n_x, n_y, n_z, delta_len, capsule_tolerance);
+                p_x, p_y, p_z, op_x, op_y, op_z, n_x, n_y, n_z, delta_len, capsule_tolerance, allocator);
         }
         if (plane_bodies) {
             generate_plane_contact_constraint(constraints, i, plane_bodies,
-                p_x, p_y, p_z, op_x, op_y, op_z, n_x, n_y, n_z, delta_len, plane_tolerance);
+                p_x, p_y, p_z, op_x, op_y, op_z, n_x, n_y, n_z, delta_len, plane_tolerance, allocator);
         }
     }
 
     return constraints;
 }
 
-function generate_sphere_contact_constraint(constraints: ContactConstraint[],
-    particle_id: number,
-    sphere_bodies: Readonly<SphereRigidBodies>,
-    p_x: number, p_y: number, p_z: number,
-    op_x: number, op_y: number, op_z: number,
-    n_x: number, n_y: number, n_z: number,
-    delta_len: number, tolerance: number) {
+const generate_sphere_contact_constraint = (() => {
+    const cp = [] as number[];
+    const cn = [] as number[];
+    return (constraints: ContactConstraint[],
+        particle_id: number,
+        sphere_bodies: Readonly<SphereRigidBodies>,
+        p_x: number, p_y: number, p_z: number,
+        op_x: number, op_y: number, op_z: number,
+        n_x: number, n_y: number, n_z: number,
+        delta_len: number, tolerance: number,
+        allocator: ContactConstraintAllocator) => {
 
-    const positions = sphere_bodies.positions;
-    const radiuses = sphere_bodies.radiuses;
-    for (let i = 0, len = sphere_bodies.length; i < len; ++i) {
-        const radius = radiuses[i] + tolerance;
-        const sq_radius = radius * radius;
-        const sp_x = positions[i * 3];
-        const sp_y = positions[i * 3 + 1];
-        const sp_z = positions[i * 3 + 2];
+        const positions = sphere_bodies.positions;
+        const radiuses = sphere_bodies.radiuses;
+        for (let i = 0, len = sphere_bodies.length; i < len; ++i) {
+            const radius = radiuses[i] + tolerance;
+            const sq_radius = radius * radius;
+            const sp_x = positions[i * 3];
+            const sp_y = positions[i * 3 + 1];
+            const sp_z = positions[i * 3 + 2];
 
-        const t_min = ray_test_sphere(op_x, op_y, op_z, n_x, n_y, n_z, delta_len, sp_x, sp_y,sp_z, sq_radius);
-        if (t_min !== t_min) continue;
+            const t_min = ray_test_sphere(op_x, op_y, op_z, n_x, n_y, n_z, delta_len, sp_x, sp_y,sp_z, sq_radius);
+            if (t_min !== t_min) continue;
 
-        // continuous collision
-        if (t_min >= 0.0) {
-            const cp_x = op_x + t_min * n_x;
-            const cp_y = op_y + t_min * n_y;
-            const cp_z = op_z + t_min * n_z;
-            const spcp_x = cp_x - sp_x;
-            const spcp_y = cp_y - sp_y;
-            const spcp_z = cp_z - sp_z;
-            const inv_spcp_len = 1 / radius;
-            const cn_x = spcp_x * inv_spcp_len;
-            const cn_y = spcp_y * inv_spcp_len;
-            const cn_z = spcp_z * inv_spcp_len;
-            const cp = [cp_x, cp_y, cp_z];
-            const cn = [cn_x, cn_y, cn_z];
+            // continuous collision
+            if (t_min >= 0.0) {
+                const cp_x = op_x + t_min * n_x;
+                const cp_y = op_y + t_min * n_y;
+                const cp_z = op_z + t_min * n_z;
+                const spcp_x = cp_x - sp_x;
+                const spcp_y = cp_y - sp_y;
+                const spcp_z = cp_z - sp_z;
+                const inv_spcp_len = 1 / radius;
+                const cn_x = spcp_x * inv_spcp_len;
+                const cn_y = spcp_y * inv_spcp_len;
+                const cn_z = spcp_z * inv_spcp_len;
 
-            // TODO: What is the correct gradient function of continuous collision?
-            constraints.push(create_contact_constraint(particle_id, cn, cp, cn));
+                // TODO: What is the correct gradient function of continuous collision?
+                constraints.push(create_contact_constraint(particle_id, cn_x, cn_y, cn_z, cp_x, cp_y, cp_z, cn_x, cn_y, cn_z, allocator));
+            }
+            // static collision
+            else {
+                static_collision_sphere_contact_info(p_x, p_y, p_z, sp_x, sp_y, sp_z, radius, cp, cn);
+                constraints.push(create_contact_constraint(particle_id, cn[0], cn[1], cn[2], cp[0], cp[1], cp[2], cn[0], cn[1], cn[2], allocator));
+            }
         }
-        // static collision
-        else {
-            const cp = [] as number[];
-            const cn = [] as number[];
-            static_collision_sphere_contact_info(p_x, p_y, p_z, sp_x, sp_y, sp_z, radius, cp, cn);
-            constraints.push(create_contact_constraint(particle_id, cn, cp, cn));
-        }
-    }
-}
+    };
+})();
 
 function generate_box_contact_constraint(constraints: ContactConstraint[],
     particle_id: number,
@@ -131,7 +132,8 @@ function generate_box_contact_constraint(constraints: ContactConstraint[],
     p_x: number, p_y: number, p_z: number,
     op_x: number, op_y: number, op_z: number,
     n_x: number, n_y: number, n_z: number,
-    delta_len: number, tolerance: number) {
+    delta_len: number, tolerance: number,
+    allocator: ContactConstraintAllocator) {
 
     const positions = box_bodies.positions;
     const inv_mats = box_bodies.inv_basis_mats;
@@ -212,11 +214,9 @@ function generate_box_contact_constraint(constraints: ContactConstraint[],
             const cn_x = sign * inv_mats[idx + axis];
             const cn_y = sign * inv_mats[idx + axis + 3];
             const cn_z = sign * inv_mats[idx + axis + 6];
-            const cp = [cp_x, cp_y, cp_z];
-            const cn = [cn_x, cn_y, cn_z];
 
             // TODO: What is the correct gradient function of continuous collision?
-            constraints.push(create_contact_constraint(particle_id, cn, cp, cn));
+            constraints.push(create_contact_constraint(particle_id, cn_x, cn_y, cn_z, cp_x, cp_y, cp_z, cn_x, cn_y, cn_z, allocator));
         }
         // static collision
         else {
@@ -241,120 +241,116 @@ function generate_box_contact_constraint(constraints: ContactConstraint[],
             const cp_x = p_x + t_min * cn_x;
             const cp_y = p_y + t_min * cn_y;
             const cp_z = p_z + t_min * cn_z;
-            const cp = [cp_x, cp_y, cp_z];
-            const cn = [cn_x, cn_y, cn_z];
 
-            constraints.push(create_contact_constraint(particle_id, cn, cp, cn));
+            constraints.push(create_contact_constraint(particle_id, cn_x, cn_y, cn_z, cp_x, cp_y, cp_z, cn_x, cn_y, cn_z, allocator));
         }
     }
 }
 
-function generate_capsule_contact_constraint(constraints: ContactConstraint[],
-    particle_id: number,
-    capsule_bodies: Readonly<CapsuleRigidBodies>,
-    p_x: number, p_y: number, p_z: number,
-    op_x: number, op_y: number, op_z: number,
-    n_x: number, n_y: number, n_z: number,
-    delta_len: number, tolerance: number) {
+const generate_capsule_contact_constraint = (() => {
+    const cp = [] as number[];
+    const cn = [] as number[];
+    return (constraints: ContactConstraint[],
+        particle_id: number,
+        capsule_bodies: Readonly<CapsuleRigidBodies>,
+        p_x: number, p_y: number, p_z: number,
+        op_x: number, op_y: number, op_z: number,
+        n_x: number, n_y: number, n_z: number,
+        delta_len: number, tolerance: number,
+        allocator: ContactConstraintAllocator) => {
 
-    const half_lengths = capsule_bodies.half_lengths;
-    const positions = capsule_bodies.positions;
-    const directions = capsule_bodies.directions;
-    const radiuses = capsule_bodies.radiuses;
-    for (let i = 0, len = capsule_bodies.length; i < len; ++i) {
-        const X = i * 3, Y = X + 1, Z = X + 2;
-        const half_length = half_lengths[i];
-        const cap_x = positions[X];
-        const cap_y = positions[Y];
-        const cap_z = positions[Z];
-        const dir_x = directions[X];
-        const dir_y = directions[Y];
-        const dir_z = directions[Z];
-        const sp1_x = cap_x + dir_x * half_length;
-        const sp1_y = cap_y + dir_y * half_length;
-        const sp1_z = cap_z + dir_z * half_length;
-        const sp2_x = cap_x - dir_x * half_length;
-        const sp2_y = cap_y - dir_y * half_length;
-        const sp2_z = cap_z - dir_z * half_length;
-        const radius = radiuses[i] + tolerance;
-        const sq_radius = radius * radius;
+        const half_lengths = capsule_bodies.half_lengths;
+        const positions = capsule_bodies.positions;
+        const directions = capsule_bodies.directions;
+        const radiuses = capsule_bodies.radiuses;
+        for (let i = 0, len = capsule_bodies.length; i < len; ++i) {
+            const X = i * 3, Y = X + 1, Z = X + 2;
+            const half_length = half_lengths[i];
+            const cap_x = positions[X];
+            const cap_y = positions[Y];
+            const cap_z = positions[Z];
+            const dir_x = directions[X];
+            const dir_y = directions[Y];
+            const dir_z = directions[Z];
+            const sp1_x = cap_x + dir_x * half_length;
+            const sp1_y = cap_y + dir_y * half_length;
+            const sp1_z = cap_z + dir_z * half_length;
+            const sp2_x = cap_x - dir_x * half_length;
+            const sp2_y = cap_y - dir_y * half_length;
+            const sp2_z = cap_z - dir_z * half_length;
+            const radius = radiuses[i] + tolerance;
+            const sq_radius = radius * radius;
 
-        const cp = [] as number[];
-        const cn = [] as number[];
+            // test sphere 1
+            if ( test_capsule_sphere(p_x, p_y, p_z, op_x, op_y, op_z, n_x, n_y, n_z, delta_len,
+                sp1_x, sp1_y, sp1_z, sp2_x, sp2_y, sp2_z, radius, sq_radius, cp, cn) ) {
 
-        // test sphere 1
-        if ( test_capsule_sphere(p_x, p_y, p_z, op_x, op_y, op_z, n_x, n_y, n_z, delta_len,
-            sp1_x, sp1_y, sp1_z, sp2_x, sp2_y, sp2_z, radius, sq_radius, cp, cn) ) {
+                constraints.push(create_contact_constraint(particle_id, cn[0], cn[1], cn[2], cp[0], cp[1], cp[2], cn[0], cn[1], cn[2], allocator));
+                continue;
+            }
 
-            constraints.push(create_contact_constraint(particle_id, cn, cp, cn));
-            continue;
-        }
+            // test sphere 2
+            if ( test_capsule_sphere(p_x, p_y, p_z, op_x, op_y, op_z, n_x, n_y, n_z, delta_len,
+                sp2_x, sp2_y, sp2_z, sp1_x, sp1_y, sp1_z, radius, sq_radius, cp, cn) ) {
 
-        // test sphere 2
-        if ( test_capsule_sphere(p_x, p_y, p_z, op_x, op_y, op_z, n_x, n_y, n_z, delta_len,
-            sp2_x, sp2_y, sp2_z, sp1_x, sp1_y, sp1_z, radius, sq_radius, cp, cn) ) {
+                constraints.push(create_contact_constraint(particle_id, cn[0], cn[1], cn[2], cp[0], cp[1], cp[2], cn[0], cn[1], cn[2], allocator));
+                continue;
+            }
 
-            constraints.push(create_contact_constraint(particle_id, cn, cp, cn));
-            continue;
-        }
+            // test cilinder
+            const ct_min = ray_test_inf_cilinder(op_x, op_y, op_z, n_x, n_y, n_z, delta_len,
+                cap_x, cap_y, cap_z, dir_x, dir_y, dir_z, sq_radius);
+            if (ct_min === ct_min) {
+                // continuous collision
+                if (ct_min >= 0.0) {
+                    const cp_x = op_x + ct_min * n_x;
+                    const cp_y = op_y + ct_min * n_y;
+                    const cp_z = op_z + ct_min * n_z;
+                    if (three_vectors_dot(sp2_x, sp2_y, sp2_z, sp1_x, sp1_y, sp1_z, cp_x, cp_y, cp_z) > 0.0
+                        && three_vectors_dot(sp1_x, sp1_y, sp1_z, sp2_x, sp2_y, sp2_z, cp_x, cp_y, cp_z) > 0.0) {
 
-        // test cilinder
-        const ct_min = ray_test_inf_cilinder(op_x, op_y, op_z, n_x, n_y, n_z, delta_len,
-            cap_x, cap_y, cap_z, dir_x, dir_y, dir_z, sq_radius);
-        if (ct_min === ct_min) {
-            // continuous collision
-            if (ct_min >= 0.0) {
-                const cp_x = op_x + ct_min * n_x;
-                const cp_y = op_y + ct_min * n_y;
-                const cp_z = op_z + ct_min * n_z;
-                if (three_vectors_dot(sp2_x, sp2_y, sp2_z, sp1_x, sp1_y, sp1_z, cp_x, cp_y, cp_z) > 0.0
-                    && three_vectors_dot(sp1_x, sp1_y, sp1_z, sp2_x, sp2_y, sp2_z, cp_x, cp_y, cp_z) > 0.0) {
+                        const dot = (cp_x - sp2_x) * dir_x + (cp_y - sp2_y) * dir_y + (cp_z - sp2_z) * dir_z;
+                        const center_x = sp2_x + dot * dir_x;
+                        const center_y = sp2_y + dot * dir_y;
+                        const center_z = sp2_z + dot * dir_z;
+                        const v_x = cp_x - center_x;
+                        const v_y = cp_y - center_y;
+                        const v_z = cp_z - center_z;
+                        const inv_v_len = 1 / radius;
+                        const cn_x = v_x * inv_v_len;
+                        const cn_y = v_y * inv_v_len;
+                        const cn_z = v_z * inv_v_len;
+                        // TODO: What is the correct gradient function of continuous collision?
+                        constraints.push(create_contact_constraint(particle_id, cn_x, cn_y, cn_z, cp_x, cp_y, cp_z, cn_x, cn_y, cn_z, allocator));
+                    }
+                }
+                // static collision
+                else {
+                    if (three_vectors_dot(sp2_x, sp2_y, sp2_z, sp1_x, sp1_y, sp1_z, p_x, p_y, p_z) > 0.0
+                        && three_vectors_dot(sp1_x, sp1_y, sp1_z, sp2_x, sp2_y, sp2_z, p_x, p_y, p_z) > 0.0) {
 
-                    const dot = (cp_x - sp2_x) * dir_x + (cp_y - sp2_y) * dir_y + (cp_z - sp2_z) * dir_z;
-                    const center_x = sp2_x + dot * dir_x;
-                    const center_y = sp2_y + dot * dir_y;
-                    const center_z = sp2_z + dot * dir_z;
-                    const v_x = cp_x - center_x;
-                    const v_y = cp_y - center_y;
-                    const v_z = cp_z - center_z;
-                    const inv_v_len = 1 / radius;
-                    const cn_x = v_x * inv_v_len;
-                    const cn_y = v_y * inv_v_len;
-                    const cn_z = v_z * inv_v_len;
-                    cp.push(cp_x, cp_y, cp_z);
-                    cn.push(cn_x, cn_y, cn_z);
-                    // TODO: What is the correct gradient function of continuous collision?
-                    constraints.push(create_contact_constraint(particle_id, cn, cp, cn));
+                        const dot = (p_x - sp2_x) * dir_x + (p_y - sp2_y) * dir_y + (p_z - sp2_z) * dir_z;
+                        const center_x = sp2_x + dot * dir_x;
+                        const center_y = sp2_y + dot * dir_y;
+                        const center_z = sp2_z + dot * dir_z;
+                        const v_x = p_x - center_x;
+                        const v_y = p_y - center_y;
+                        const v_z = p_z - center_z;
+                        const v_len = sqrt(v_x * v_x + v_y * v_y + v_z * v_z);
+                        const inv_v_len = 1 / v_len;
+                        const cn_x = v_x * inv_v_len;
+                        const cn_y = v_y * inv_v_len;
+                        const cn_z = v_z * inv_v_len;
+                        const cp_x = radius * cn_x + center_x;
+                        const cp_y = radius * cn_y + center_y;
+                        const cp_z = radius * cn_z + center_z;
+                        constraints.push(create_contact_constraint(particle_id, cn_x, cn_y, cn_z, cp_x, cp_y, cp_z, cn_x, cn_y, cn_z, allocator));
+                    }
                 }
             }
-            // static collision
-            else {
-                if (three_vectors_dot(sp2_x, sp2_y, sp2_z, sp1_x, sp1_y, sp1_z, p_x, p_y, p_z) > 0.0
-                    && three_vectors_dot(sp1_x, sp1_y, sp1_z, sp2_x, sp2_y, sp2_z, p_x, p_y, p_z) > 0.0) {
-
-                    const dot = (p_x - sp2_x) * dir_x + (p_y - sp2_y) * dir_y + (p_z - sp2_z) * dir_z;
-                    const center_x = sp2_x + dot * dir_x;
-                    const center_y = sp2_y + dot * dir_y;
-                    const center_z = sp2_z + dot * dir_z;
-                    const v_x = p_x - center_x;
-                    const v_y = p_y - center_y;
-                    const v_z = p_z - center_z;
-                    const v_len = sqrt(v_x * v_x + v_y * v_y + v_z * v_z);
-                    const inv_v_len = 1 / v_len;
-                    const cn_x = v_x * inv_v_len;
-                    const cn_y = v_y * inv_v_len;
-                    const cn_z = v_z * inv_v_len;
-                    const cp_x = radius * cn_x + center_x;
-                    const cp_y = radius * cn_y + center_y;
-                    const cp_z = radius * cn_z + center_z;
-                    cp.push(cp_x, cp_y, cp_z);
-                    cn.push(cn_x, cn_y, cn_z);
-                    constraints.push(create_contact_constraint(particle_id, cn, cp, cn));
-                }
-            }
         }
-    }
-}
+    };
+})();
 
 function generate_plane_contact_constraint(constraints: ContactConstraint[],
     particle_id: number,
@@ -362,7 +358,8 @@ function generate_plane_contact_constraint(constraints: ContactConstraint[],
     p_x: number, p_y: number, p_z: number,
     op_x: number, op_y: number, op_z: number,
     n_x: number, n_y: number, n_z: number,
-    delta_len: number, tolerance: number) {
+    delta_len: number, tolerance: number,
+    allocator: ContactConstraintAllocator) {
 
     const constants = plane_bodies.constants;
     const normals = plane_bodies.normals;
@@ -390,21 +387,17 @@ function generate_plane_contact_constraint(constraints: ContactConstraint[],
             const cp_x = op_x + t_min * n_x;
             const cp_y = op_y + t_min * n_y;
             const cp_z = op_z + t_min * n_z;
-            const cp = [cp_x, cp_y, cp_z];
-            const cn = [pn_x, pn_y, pn_z];
 
             // TODO: What is the correct gradient function of continuous collision?
-            constraints.push(create_contact_constraint(particle_id, cn, cp, cn));
+            constraints.push(create_contact_constraint(particle_id, pn_x, pn_y, pn_z, cp_x, cp_y, cp_z, pn_x, pn_y, pn_z, allocator));
         }
         // static collision
         else {
             const cp_x = pn_x * -dist + p_x;
             const cp_y = pn_y * -dist + p_y;
             const cp_z = pn_z * -dist + p_z;
-            const cp = [cp_x, cp_y, cp_z];
-            const cn = [pn_x, pn_y, pn_z];
 
-            constraints.push(create_contact_constraint(particle_id, cn, cp, cn));
+            constraints.push(create_contact_constraint(particle_id, pn_x, pn_y, pn_z, cp_x, cp_y, cp_z, pn_x, pn_y, pn_z, allocator));
         }
     }
 }
@@ -423,8 +416,8 @@ function static_collision_sphere_contact_info(p_x: number, p_y: number, p_z: num
     const cp_x = sp_x + cn_x * radius;
     const cp_y = sp_y + cn_y * radius;
     const cp_z = sp_z + cn_z * radius;
-    out_cp.push(cp_x, cp_y, cp_z);
-    out_cn.push(cn_x, cn_y, cn_z);
+    out_cp[0] = cp_x, out_cp[1] = cp_y, out_cp[2] = cp_z;
+    out_cn[0] = cn_x, out_cn[1] = cn_y, out_cn[2] = cn_z;
 }
 
 function ray_test_sphere(orig_x: number, orig_y: number, orig_z: number,
@@ -509,8 +502,8 @@ function test_capsule_sphere(
                 const cn_x = spcp_x * inv_spcp_len;
                 const cn_y = spcp_y * inv_spcp_len;
                 const cn_z = spcp_z * inv_spcp_len;
-                out_cp.push(cp_x, cp_y, cp_z);
-                out_cn.push(cn_x, cn_y, cn_z);
+                out_cp[0] = cp_x, out_cp[1] = cp_y, out_cp[2] = cp_z;
+                out_cn[0] = cn_x, out_cn[1] = cn_y, out_cn[2] = cn_z;
                 return true;
             }
         }
