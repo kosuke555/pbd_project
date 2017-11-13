@@ -1,9 +1,9 @@
 import * as three from 'three';
 import { ParticlePositionType } from '../types';
 import ClothModel from './ClothModel';
-import { Stiffnesses, prestabilize_contact_constraint, solve_contact_constraint,
-    ContactConstraint, ContactConstraintAllocator } from './constraints';
-import { CollisionObjects, generate_collision_constraints, CollisionTolerances } from './collision_detection';
+import { Stiffnesses, prestabilize_contact_constraint,
+    solve_contact_constraint, ContactConstraint } from './constraints';
+import { CollisionObjects, CollisionDetector } from './collision_detection';
 
 export interface SimulationConfiguration {
     step_iter: number,
@@ -12,23 +12,23 @@ export interface SimulationConfiguration {
     stiffnesses: Stiffnesses,
     time_step: number,
     gravity: number,
-    velocity_damp_factor: number,
-    collision_tolerances: CollisionTolerances
+    velocity_damp_factor: number
 }
 
 export const step = (() => {
     let prev_coll_consts = [] as ContactConstraint[];
-    return (model: ClothModel, collision_objects: CollisionObjects, config: SimulationConfiguration) => {
+    return (model: ClothModel, objects: CollisionObjects,
+        detector: CollisionDetector, config: SimulationConfiguration) => {
+
         const step_iter = config.step_iter;
         for (let i = 0; i < step_iter; ++i) {
-            prev_coll_consts = internal_step(model, collision_objects, prev_coll_consts, config);
+            prev_coll_consts = internal_step(model, objects, detector, prev_coll_consts, config);
         }
     };
 })();
 
 const internal_step = (() => {
-    const contact_constraint_allocator = new ContactConstraintAllocator();
-    return (model: ClothModel, collision_objects: CollisionObjects,
+    return (model: ClothModel, objects: CollisionObjects, detector: CollisionDetector,
         prev_collision_constraints: ContactConstraint[], config: SimulationConfiguration) => {
 
         const particles = model.particles;
@@ -50,7 +50,6 @@ const internal_step = (() => {
         const gravity = config.gravity;
         const gravity_speed = gravity * time_step;
         const velocity_damp_factor = config.velocity_damp_factor;
-        const collision_tolerances = config.collision_tolerances;
 
         // integrate velocity
         for (let i = 0; i < n_particle; ++i) {
@@ -103,9 +102,8 @@ const internal_step = (() => {
         }
 
         // generate collision constraints
-        contact_constraint_allocator.release_all();
-        const collision_constraints = generate_collision_constraints(particles, collision_objects,
-            collision_tolerances, contact_constraint_allocator);
+        detector.release_collision_constraints();
+        const collision_constraints = detector.generate_collision_constraints(particles, objects);
 
         // project constraints
         for (let i = 0; i < max_proj_iter; ++i) {
