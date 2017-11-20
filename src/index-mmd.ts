@@ -10,6 +10,7 @@ import { SphereRigidBodies, BoxRigidBodies, CapsuleRigidBodies, PlaneRigidBodies
     SphereRigidBodyAccessor, BoxRigidBodyAccessor, CapsuleRigidBodyAccessor,
     create_sphere_rigid_bodies, create_box_rigid_bodies, create_capsule_rigid_bodies, create_plane_rigid_bodies,
     sphere_rigid_body_accessor, box_rigid_body_accessor, capsule_rigid_body_accessor, plane_rigid_body_accessor } from './simulation/rigid_bodies';
+import { CollisionDetector } from './simulation/collision_detection';
 import { step, SimulationConfiguration } from './simulation/time_integrator';
 import { to_enumerable } from './utils/transformers';
 import { sub_typed_array, get_constructor } from './utils/typedarray_utils';
@@ -36,14 +37,14 @@ const ClothMass = 0.001;
 // const DefaultMMDModel = 'assets/sylvie/sylvie_mod_skirt2_tess.pmx';
 // const DefaultMMDModel = 'assets/sylvie/sylvie_blender_mod_weight.pmx';
 const DefaultMMDModel = 'assets/sylvie/sylvie_blender_mod_body.pmx';
-// const DefaultMMDMotion = 'assets/vmd/walk.vmd';
+const DefaultMMDMotion = 'assets/vmd/walk.vmd';
 // const DefaultMMDMotion = 'assets/vmd/agura.vmd';
 // const DefaultMMDMotion = 'assets/vmd/turn.vmd';
 // const DefaultMMDMotion = 'assets/vmd/dance.vmd';
 // const DefaultMMDMotion = 'assets/vmd/dance2.vmd';
 // const DefaultMMDMotion = 'assets/vmd/Skip.vmd';
 // const DefaultMMDMotion = 'assets/vmd/Running.vmd';
-const DefaultMMDMotion = 'assets/vmd/AzatokawaiiTurn.vmd';
+// const DefaultMMDMotion = 'assets/vmd/AzatokawaiiTurn.vmd';
 const TargetMaterialName = 'スカート';
 
 const WireframeRendering = false;
@@ -116,6 +117,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     const model = build_model(mmd_mesh);
     const particles = model.particles;
 
+    const detector = new CollisionDetector({
+        table_size: 997,
+        grid_cell_size: 5,
+        position_offset: 100
+    });
+
     const simulation_config = {
         step_iter: StepIteration,
         max_proj_iter: MaxProjectionIteration,
@@ -126,19 +133,13 @@ document.addEventListener('DOMContentLoaded', async () => {
         stiffnesses: {
             compression: ClothCompressionStiffness,
             stretch: ClothStretchStiffness
-        },
-        collision_tolerances: {
-            sphere: 0,
-            box: 0,
-            capsule: 0,
-            plane: 0
         }
     };
 
     mmd_helper.animate(TimeStep);
     
     for (let i = 0; i < (1 / TimeStep) * PhysicsStabilizationTime; ++i) {
-        step(model, rigid_bodies, simulation_config);
+        step(model, rigid_bodies, detector, simulation_config);
     }
 
     if (ResetParticlesWhenLoopingAnimation) {
@@ -159,7 +160,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
 
     create_loop_runner({ stats, renderer, scene, camera, mmd_helper, mmd_mesh,
-        model, rigid_bodies, simulation_config, debug_points, rigid_body_meshes })();
+        model, rigid_bodies, detector, simulation_config, debug_points, rigid_body_meshes })();
 
     recorder && recorder.start();
 });
@@ -307,6 +308,7 @@ function update_rigid_body_transform(rigid_bodies: RigidBodySet) {
         const sphere = sphere_accessors[i];
         const origin = sphere.body.getCenterOfMassTransform().getOrigin();
         sphere.set_position(origin.x(), origin.y(), origin.z());
+        sphere.calc_AABB();
     }
     const box_accessors = rigid_bodies.box_accessors;
     for (let i = 0, len = box_accessors.length; i < len; ++i) {
@@ -322,6 +324,7 @@ function update_rigid_body_transform(rigid_bodies: RigidBodySet) {
         const z_vec = basis.getRow(2);
         box.set_basis_vector(2, z_vec.x(), z_vec.y(), z_vec.z());
         box.calc_inv_basis_matrix();
+        box.calc_AABB();
     }
     const capsule_accessors = rigid_bodies.capsule_accessors;
     for (let i = 0, len = capsule_accessors.length; i < len; ++i) {
@@ -344,6 +347,7 @@ function update_rigid_body_transform(rigid_bodies: RigidBodySet) {
         const dir_y = (m11 * m33 - m13 * m31 * inv_det);
         const dir_z = (m13 * m21 - m11 * m23) * inv_det;
         capsule.set_direction(dir_x, dir_y, dir_z);
+        capsule.calc_AABB();
     }
 }
 
@@ -356,9 +360,10 @@ function create_loop_runner(environment: {
         mmd_mesh: three.MMDMesh,
         model: Readonly<ClothModel> & Readonly<MappingInfo>,
         rigid_bodies: RigidBodySet,
+        detector: CollisionDetector,
         simulation_config: SimulationConfiguration,
         debug_points: three.Points,
-        rigid_body_meshes: three.Mesh[]
+        rigid_body_meshes: three.Object3D[]
     }) {
 
     const stats = environment.stats;
@@ -385,6 +390,8 @@ function create_loop_runner(environment: {
 
     const rigid_bodies = environment.rigid_bodies;
 
+    const detector = environment.detector;
+
     const simulation_config = environment.simulation_config;
 
     const debug_points_geo = environment.debug_points.geometry as three.BufferGeometry;
@@ -404,7 +411,7 @@ function create_loop_runner(environment: {
         mmd_mesh.updateMatrixWorld(true);
         update_attached_particle(particles, attachments, mmd_mesh.skeleton);
 
-        step(model, rigid_bodies, simulation_config);
+        step(model, rigid_bodies, detector, simulation_config);
 
         update_face_normals(positions, mesh_indices, face_normals);
         update_vertex_normals(face_normals, mesh_indices, vertex_normals);
@@ -413,10 +420,14 @@ function create_loop_runner(environment: {
         pos_attr.needsUpdate = true;
         normal_attr.needsUpdate = true;
 
-        debug_points_attr.needsUpdate = true;
+        if (ShowParticlePoint) {
+            debug_points_attr.needsUpdate = true;
+        }
 
-        for (let i = 0, len = rigid_body_meshes.length; i < len; ++i) {
-            rigid_body_meshes[i].userData.update();
+        if (ShowRigidBody) {
+            for (let i = 0, len = rigid_body_meshes.length; i < len; ++i) {
+                rigid_body_meshes[i].userData.update();
+            }
         }
 
         renderer.render(scene, camera);

@@ -8,7 +8,7 @@ import { create_distance_constraint } from './simulation/constraints';
 import { create_sphere_rigid_bodies, sphere_rigid_body_accessor, create_box_rigid_bodies,
     create_plane_rigid_bodies, box_rigid_body_accessor, create_capsule_rigid_bodies,
     capsule_rigid_body_accessor, plane_rigid_body_accessor } from './simulation/rigid_bodies';
-import { CollisionObjects } from './simulation/collision_detection';
+import { CollisionObjects, CollisionDetector } from './simulation/collision_detection';
 import { step } from './simulation/time_integrator';
 import CanvasRecorder from './utils/CanvasRecorder';
 import { particle_helper, rigid_body_helper } from './utils/debug';
@@ -36,7 +36,7 @@ const BoxCollisionTolerance = 0.055;
 const CapsuleCollisionTolerance = 0.01;
 const PlaneCollisionTolerance = 0;
 
-const WireframeRendering = false;
+const WireframeRendering = true;
 const RigidBodyWireframeRendering = false;
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -74,6 +74,12 @@ document.addEventListener('DOMContentLoaded', () => {
     const rigid_body_meshes = rigid_body_helper(rigid_bodies, RigidBodyWireframeRendering);
     rigid_body_meshes.forEach(mesh => scene.add(mesh));
 
+    const detector = new CollisionDetector({
+        table_size: 997,
+        grid_cell_size: 2,
+        position_offset: 10
+    });
+
     const simulation_config = {
         step_iter: StepIteration,
         max_proj_iter: MaxProjectionIteration,
@@ -84,12 +90,6 @@ document.addEventListener('DOMContentLoaded', () => {
         stiffnesses: {
             compression: ClothCompressionStiffness,
             stretch: ClothStretchStiffness
-        },
-        collision_tolerances: {
-            sphere: SphereCollisionTolerance,
-            box: BoxCollisionTolerance,
-            capsule: CapsuleCollisionTolerance,
-            plane: PlaneCollisionTolerance
         }
     };
 
@@ -101,7 +101,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const render = () => {
         stats.begin();
 
-        step(model, rigid_bodies, simulation_config);
+        step(model, rigid_bodies, detector, simulation_config);
 
         update_face_normals(positions, indices, face_normals);
         update_vertex_normals(face_normals, indices, vertex_normals);
@@ -207,8 +207,10 @@ function create_rigid_bodies(type: 'sphere' | 'box' | 'capsule' | 'plane'): Coll
         case 'sphere':
             const spheres = create_sphere_rigid_bodies(1);
             const sphere = sphere_rigid_body_accessor(spheres, 0);
-            sphere.set_position(ClothWidth * 0.5, -ClothHeight * 0.5, 0);
             sphere.radius = ClothWidth * 0.25;
+            sphere.tolerance = SphereCollisionTolerance;
+            sphere.set_position(ClothWidth * 0.5, -ClothHeight * 0.5, 0);
+            sphere.calc_AABB();
             return { spheres };
 
         case 'box':
@@ -217,12 +219,14 @@ function create_rigid_bodies(type: 'sphere' | 'box' | 'capsule' | 'plane'): Coll
             box.half_width = ClothWidth * 0.25;
             box.half_height = ClothWidth * 0.25;
             box.half_depth = ClothWidth * 0.25;
+            box.tolerance = BoxCollisionTolerance;
             box.set_position(ClothWidth * 0.5, -ClothHeight * 0.5, 0);
-            const rot_mat = new three.Matrix4().makeRotationY(Math.PI / 4).elements;
+            const rot_mat = new three.Matrix4().makeRotationY(0).elements;
             box.set_basis_vector(0, rot_mat[0], rot_mat[4], rot_mat[8]);
             box.set_basis_vector(1, rot_mat[1], rot_mat[5], rot_mat[9]);
             box.set_basis_vector(2, rot_mat[2], rot_mat[6], rot_mat[10]);
             box.calc_inv_basis_matrix();
+            box.calc_AABB();
             return { boxes };
 
         case 'capsule':
@@ -230,14 +234,17 @@ function create_rigid_bodies(type: 'sphere' | 'box' | 'capsule' | 'plane'): Coll
             const capsule = capsule_rigid_body_accessor(capsules, 0);
             capsule.radius = ClothWidth * 0.125;
             capsule.length = ClothWidth * 0.25;
+            capsule.tolerance = CapsuleCollisionTolerance;
             capsule.set_position(ClothWidth * 0.5, -ClothHeight * 0.5, 0);
             capsule.set_direction(0, 0, 1);
+            capsule.calc_AABB();
             return { capsules };
 
         case 'plane':
             const planes = create_plane_rigid_bodies(1);
             const plane = plane_rigid_body_accessor(planes, 0);
             plane.constant = ClothHeight * 0.5;
+            plane.tolerance = PlaneCollisionTolerance;
             plane.set_normal(0, 1, 0);
             return { planes };
     }
