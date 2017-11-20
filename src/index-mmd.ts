@@ -110,6 +110,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         const material_index = get_material_index_by_name(mmd_mesh.material, TargetMaterialName);
         mmd_mesh.material[material_index].wireframe = true;
     }
+    mmd_mesh.add(camera);
     scene.add(mmd_mesh);
 
     const rigid_bodies = setup_rigid_bodies(mmd_mesh.physics);
@@ -136,11 +137,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     };
 
-    mmd_helper.animate(TimeStep);
-    
-    for (let i = 0; i < (1 / TimeStep) * PhysicsStabilizationTime; ++i) {
-        step(model, rigid_bodies, detector, simulation_config);
-    }
+    stabilize_physics(mmd_helper, mmd_mesh, model,
+        rigid_bodies, detector, simulation_config, PhysicsStabilizationTime);
 
     if (ResetParticlesWhenLoopingAnimation) {
         const initial_positions = model.particles.position.slice();
@@ -189,8 +187,7 @@ function load_mmd_mesh(model_path: string, motion_path: string, helper: three.MM
     return new Promise<LoadedMMDMesh>((resolve, reject) => {
         const loader = new three.MMDLoader();
         loader.load(model_path, [motion_path], mesh => {
-            mesh.matrixAutoUpdate = false;
-            
+
             const geometry = mesh.geometry;
             (geometry.getAttribute('position') as three.BufferAttribute).setDynamic(true);
             (geometry.getAttribute('normal') as three.BufferAttribute).setDynamic(true);
@@ -228,8 +225,7 @@ function build_model(mmd_mesh: three.MMDMesh): Readonly<ClothModel> & Readonly<M
     const pairs = { vertex_idx_list, particle_idx_list, length: n_particle };
 
     const particles = create_particle_data(n_particle);
-    // TODO: Consider the case where mmd_mesh.matrixWorld is not an identity matrix
-    copy_particle_positions_from_vertices(particles, vertices, pairs);
+    copy_particle_positions_from_vertices(particles, vertices, pairs, mmd_mesh.matrixWorld);
 
     const attachments = find_attached_particles(vertices, skin_indices, skin_weights, pairs);
 
@@ -300,6 +296,24 @@ function setup_rigid_bodies(physics: three.MMDPhysics): RigidBodySet {
     update_rigid_body_transform(rigid_bodies);
 
     return rigid_bodies;
+}
+
+function stabilize_physics(mmd_helper: three.MMDHelper, mmd_mesh: three.MMDMesh,
+    model: Readonly<ClothModel> & Readonly<MappingInfo>, rigid_bodies: RigidBodySet,
+    detector: CollisionDetector, simulation_config: SimulationConfiguration, stabilize_time: number) {
+
+    const particles = model.particles;
+    const attachments = model.attachments;
+    const time_step = simulation_config.time_step;
+
+    mmd_helper.animate(time_step);
+    update_rigid_body_transform(rigid_bodies);
+    mmd_mesh.updateMatrixWorld(true);
+    update_attached_particle(particles, attachments, mmd_mesh.skeleton);
+
+    for (let i = 0, len = (1 / time_step) * stabilize_time; i < len; ++i) {
+        step(model, rigid_bodies, detector, simulation_config);
+    }
 }
 
 function update_rigid_body_transform(rigid_bodies: RigidBodySet) {
@@ -399,6 +413,8 @@ function create_loop_runner(environment: {
 
     const rigid_body_meshes = environment.rigid_body_meshes;
 
+    const inv_transform = new three.Matrix4();
+
     const runner = () => {
         stats.begin();
 
@@ -416,7 +432,9 @@ function create_loop_runner(environment: {
         update_face_normals(positions, mesh_indices, face_normals);
         update_vertex_normals(face_normals, mesh_indices, vertex_normals);
 
-        update_vertex_attributes(pos_buffer, positions, normal_buffer, vertex_normals, masses, vertex_particle_pairs);
+        update_vertex_attributes(pos_buffer, positions, normal_buffer, vertex_normals,
+            masses, vertex_particle_pairs, inv_transform.getInverse(mmd_mesh.matrixWorld));
+
         pos_attr.needsUpdate = true;
         normal_attr.needsUpdate = true;
 
@@ -501,14 +519,19 @@ function create_particle_mesh_indices(geo_indices: IndexArrayType): [IndexArrayT
     return [new indices_ctor(mesh_indices), vertex_particle_map] as [IndexArrayType, Map<number, number>];
 }
 
-function copy_particle_positions_from_vertices(particles: ParticleData, vertices: VertexArrayType, pairs: VertexParticlePairs) {
-    const vert_ids = pairs.vertex_idx_list;
-    const particle_ids = pairs.particle_idx_list;
+const copy_particle_positions_from_vertices = (() => {
+    const vert = new three.Vector3();
+    return (particles: ParticleData, vertices: VertexArrayType, pairs: VertexParticlePairs, transform: three.Matrix4) => {
+        const vert_ids = pairs.vertex_idx_list;
+        const particle_ids = pairs.particle_idx_list;
 
-    for (let i = 0, len = particles.length; i < len; ++i) {
-        init_position(particles, particle_ids[i], vertices, vert_ids[i]);
-    }
-}
+        for (let i = 0, len = particles.length; i < len; ++i) {
+            const X = vert_ids[i] * 3, Y = X + 1, Z = X + 2;
+            vert.set(vertices[X], vertices[Y], vertices[Z]).applyMatrix4(transform);
+            init_position(particles, particle_ids[i], vert.x, vert.y, vert.z);
+        }
+    };
+})();
 
 function find_attached_particles(vertices: VertexArrayType, skin_indices: SkinIndexArrayType, skin_weights: WeightArrayType, pairs: VertexParticlePairs): AttachedParticles {
     const attachments = [] as { particle_idx: number, bone_indices: number[], weights: number[], initial_pos: number[] }[];
@@ -585,23 +608,32 @@ const update_attached_particle = (() => {
     };
 })();
 
-function update_vertex_attributes(
-    pos_buff: VertexArrayType, positions: ParticlePositionType,
-    normal_buff: NormalArrayType, normals: NormalArrayType,
-    masses: Float32Array, pairs: VertexParticlePairs ) {
-    
-    const vert_ids = pairs.vertex_idx_list;
-    const particle_ids = pairs.particle_idx_list;
-    for (let i = 0, len = pairs.length; i < len; ++i) {
-        const v_i = vert_ids[i];
-        const p_i = particle_ids[i];
-        if (masses[p_i] !== 0.0) {
-            pos_buff[v_i * 3] = positions[p_i * 3];
-            pos_buff[v_i * 3 + 1] = positions[p_i * 3 + 1];
-            pos_buff[v_i * 3 + 2] = positions[p_i * 3 + 2];
-            normal_buff[v_i * 3] = normals[p_i * 3];
-            normal_buff[v_i * 3 + 1] = normals[p_i * 3 + 1];
-            normal_buff[v_i * 3 + 2] = normals[p_i * 3 + 2];
+const update_vertex_attributes = (() => {
+    const vec = new three.Vector3();
+    const normal_mat = new three.Matrix3();
+    return (pos_buff: VertexArrayType, positions: ParticlePositionType,
+        normal_buff: NormalArrayType, normals: NormalArrayType,
+        masses: Float32Array, pairs: VertexParticlePairs, inv_transform: three.Matrix4 ) => {
+
+        const vert_ids = pairs.vertex_idx_list;
+        const particle_ids = pairs.particle_idx_list;
+        normal_mat.getNormalMatrix(inv_transform);
+
+        for (let i = 0, len = pairs.length; i < len; ++i) {
+            const v_i = vert_ids[i];
+            const p_i = particle_ids[i];
+            if (masses[p_i] !== 0.0) {
+                const p_X = p_i * 3, p_Y = p_X + 1, p_Z = p_X + 2;
+                const v_X = v_i * 3, v_Y = v_X + 1, v_Z = v_X + 2;
+                vec.set(positions[p_X], positions[p_Y], positions[p_Z]).applyMatrix4(inv_transform);
+                pos_buff[v_X] = vec.x;
+                pos_buff[v_Y] = vec.y;
+                pos_buff[v_Z] = vec.z;
+                vec.set(normals[p_X], normals[p_Y], normals[p_Z]).applyMatrix3(normal_mat);
+                normal_buff[v_X] = vec.x;
+                normal_buff[v_Y] = vec.y;
+                normal_buff[v_Z] = vec.z;
+            }
         }
-    }
-}
+    };
+})();
