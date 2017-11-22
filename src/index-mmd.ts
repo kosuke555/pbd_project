@@ -31,14 +31,7 @@ const ClothMass = 0.001;
 const StaticFrictionCoefficient = 0.61;
 const KineticFrictionCoefficient = 0.52;
 
-// const DefaultMMDModel = 'assets/sylvie/sylvie_merged.pmx';
-// const DefaultMMDModel = 'assets/sylvie/sylvie_mod_rb.pmx';
-// const DefaultMMDModel = 'assets/sylvie/sylvie_mod_skirt.pmx';
-// const DefaultMMDModel = 'assets/sylvie/sylvie_mod_skirt_rb.pmx';
-// const DefaultMMDModel = 'assets/sylvie/sylvie_mod_skirt2.pmx';
-// const DefaultMMDModel = 'assets/sylvie/sylvie_mod_skirt2_tess.pmx';
-// const DefaultMMDModel = 'assets/sylvie/sylvie_blender_mod_weight.pmx';
-const DefaultMMDModel = 'assets/sylvie/sylvie_blender_mod_body.pmx';
+const DefaultMMDModel = 'assets/sylvie/sylvie.pmx';
 const DefaultMMDMotion = 'assets/vmd/walk.vmd';
 // const DefaultMMDMotion = 'assets/vmd/agura.vmd';
 // const DefaultMMDMotion = 'assets/vmd/turn.vmd';

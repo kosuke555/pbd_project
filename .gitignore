@@ -2,4 +2,9 @@ node_modules/
 build/
 tmp/
 .vscode/
-public/assets/vmd/
+public/assets/sylvie/*
+!public/assets/sylvie/*.png
+!public/assets/sylvie/*.txt
+!public/assets/sylvie/sylvie.pmx
+public/assets/vmd/*
+!public/assets/vmd/.gitkeep
