@@ -10,7 +10,7 @@
     "test": "tsc -p test/tsconfig.test.json && mocha tmp/test/**/*.js"
   },
   "author": "kosuke.horichi@gmail.com",
-  "license": "UNLICENSED",
+  "license": "MIT",
   "dependencies": {},
   "devDependencies": {
     "@types/mocha": "^2.2.41",
