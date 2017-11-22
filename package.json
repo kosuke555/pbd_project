@@ -3,10 +3,9 @@
   "version": "1.0.0",
   "description": "My first PBD project.",
   "browser": "build/bundle.js",
-  "typings": "src/index.ts",
   "scripts": {
     "build": "tsc && rollup -c",
-    "release": "tsc && rollup -c && uglifyjs build/bundle.js -cm -o build/bundle.min.js",
+    "minify": "tsc && rollup -c && uglifyjs build/bundle-cloth.js -cm -o build/bundle-cloth.min.js && uglifyjs build/bundle-mmd.js -cm -o build/bundle-mmd.min.js",
     "clean": "rimraf build tmp",
     "test": "tsc -p test/tsconfig.test.json && mocha tmp/test/**/*.js"
   },
@@ -16,15 +15,12 @@
   "devDependencies": {
     "@types/mocha": "^2.2.41",
     "@types/power-assert": "^1.4.29",
-    "@types/three": "^0.84.18",
+    "@types/three": "^0.84.26",
     "mocha": "^3.4.2",
     "power-assert": "^1.4.4",
     "rimraf": "^2.6.1",
     "rollup": "^0.45.2",
-    "rollup-plugin-node-resolve": "^3.0.0",
-    "stats.js": "^0.17.0",
-    "three": "^0.86.0",
-    "typescript": "^2.4.1",
+    "typescript": "^2.5.3",
     "uglify-es": "^3.0.25"
   }
 }

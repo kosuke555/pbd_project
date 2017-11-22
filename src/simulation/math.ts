@@ -1,3 +1,5 @@
+export const EPSILON = 0.0000001;
+
 export function set_vec3(dst: Float32Array, x: number, y: number, z: number) {
     dst[0] = x;
     dst[1] = y;
@@ -10,6 +12,14 @@ export function set_vec3_gen(dst: Float32Array, dst_index: number, x: number, y:
     dst[dst_index * 3 + 1] = y;
     dst[dst_index * 3 + 2] = z;
     return dst;
+}
+
+export function get_vec3_array_gen(src: Float32Array, src_index: number): [number, number, number] {
+    return [
+        src[src_index * 3],
+        src[src_index * 3 + 1],
+        src[src_index * 3 + 2]
+    ];
 }
 
 export function copy_vec3_gen(dst: Float32Array, dst_index: number, src: Float32Array, src_index: number) {
