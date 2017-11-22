@@ -28,6 +28,8 @@ const VelocityDampingFactor = 0.00125;
 const ClothCompressionStiffness = 1;
 const ClothStretchStiffness = 1;
 const ClothMass = 0.001;
+const StaticFrictionCoefficient = 0.61;
+const KineticFrictionCoefficient = 0.52;
 
 // const DefaultMMDModel = 'assets/sylvie/sylvie_merged.pmx';
 // const DefaultMMDModel = 'assets/sylvie/sylvie_mod_rb.pmx';
@@ -131,6 +133,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         time_step: TimeStep,
         gravity: Gravity,
         velocity_damp_factor: VelocityDampingFactor,
+        static_friction_coeff: StaticFrictionCoefficient,
+        kinetic_friction_coeff: KineticFrictionCoefficient,
         stiffnesses: {
             compression: ClothCompressionStiffness,
             stretch: ClothStretchStiffness

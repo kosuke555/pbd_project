@@ -28,19 +28,19 @@ export function rigid_body_helper(rigid_bodies: CollisionObjects, wireframe = tr
     if (rigid_bodies.spheres) {
         for (const sphere of to_enumerable(rigid_bodies.spheres, sphere_rigid_body_accessor)) {
             render_objects.push(create_sphere_mesh(sphere, wireframe));
-            render_objects.push(create_AABB_line_segments(sphere));
+            wireframe && render_objects.push(create_AABB_line_segments(sphere));
         }
     }
     if (rigid_bodies.boxes) {
         for (const box of to_enumerable(rigid_bodies.boxes, box_rigid_body_accessor)) {
             render_objects.push(create_box_mesh(box, wireframe));
-            render_objects.push(create_AABB_line_segments(box));
+            wireframe && render_objects.push(create_AABB_line_segments(box));
         }
     }
     if (rigid_bodies.capsules) {
         for (const capsule of to_enumerable(rigid_bodies.capsules, capsule_rigid_body_accessor)) {
             render_objects.push(create_capsule_mesh(capsule, wireframe));
-            render_objects.push(create_AABB_line_segments(capsule));
+            wireframe && render_objects.push(create_AABB_line_segments(capsule));
         }
     }
 

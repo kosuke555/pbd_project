@@ -30,13 +30,15 @@ const VelocityDampingFactor = 0.00125;
 const ClothCompressionStiffness = 1.0;
 const ClothStretchStiffness = 1.0;
 const ClothMass = 1 / (ClothParticleCols * ClothParticleRows);
+const StaticFrictionCoefficient = 0.8;
+const KineticFrictionCoefficient = 0.75;
 
 const SphereCollisionTolerance = 0.005;
 const BoxCollisionTolerance = 0.055;
 const CapsuleCollisionTolerance = 0.01;
 const PlaneCollisionTolerance = 0;
 
-const WireframeRendering = true;
+const WireframeRendering = false;
 const RigidBodyWireframeRendering = false;
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -87,6 +89,8 @@ document.addEventListener('DOMContentLoaded', () => {
         time_step: TimeStep,
         gravity: Gravity,
         velocity_damp_factor: VelocityDampingFactor,
+        static_friction_coeff: StaticFrictionCoefficient,
+        kinetic_friction_coeff: KineticFrictionCoefficient,
         stiffnesses: {
             compression: ClothCompressionStiffness,
             stretch: ClothStretchStiffness

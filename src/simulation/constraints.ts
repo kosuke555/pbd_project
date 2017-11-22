@@ -118,7 +118,8 @@ export function create_contact_constraint(particle: number, n_x: number, n_y: nu
 }
 
 export function solve_contact_constraint(constraint: ContactConstraint,
-    positions: ParticlePositionType, inv_mass: Float32Array) {
+    positions: ParticlePositionType, inv_mass: Float32Array,
+    contact_normals: Float32Array, depths: Float32Array) {
 
     const p = constraint.particle;
     if (inv_mass[p] === 0.0) return;
@@ -126,16 +127,22 @@ export function solve_contact_constraint(constraint: ContactConstraint,
     const C = contact_constraint_func(constraint, positions);
     if (C >= 0.0) return;
 
-    const p_x = positions[p * 3];
-    const p_y = positions[p * 3 + 1];
-    const p_z = positions[p * 3 + 2];
+    const X = p * 3, Y = X + 1, Z = X + 2;
+    const p_x = positions[X];
+    const p_y = positions[Y];
+    const p_z = positions[Z];
     const normals = constraint.normal;
     const nx = normals[0];
     const ny = normals[1];
     const nz = normals[2];
-    positions[p * 3] = p_x - C * nx;
-    positions[p * 3 + 1] = p_y - C * ny;
-    positions[p * 3 + 2] = p_z - C * nz;
+    positions[X] = p_x - C * nx;
+    positions[Y] = p_y - C * ny;
+    positions[Z] = p_z - C * nz;
+    const cn = constraint.contact_normal;
+    contact_normals[X] += cn[0];
+    contact_normals[Y] += cn[1];
+    contact_normals[Z] += cn[2];
+    depths[p] -= C;
 }
 
 export function prestabilize_contact_constraint(constraint: ContactConstraint, positions: ParticlePositionType,
