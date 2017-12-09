@@ -3,61 +3,6 @@
 
 Stats = Stats && Stats.hasOwnProperty('default') ? Stats['default'] : Stats;
 
-function create_particle_data(n_particle) {
-    const mass = new Float32Array(n_particle);
-    const inv_mass = new Float32Array(n_particle);
-    const velocity = new Float32Array(n_particle * 3);
-    const position = new Float32Array(n_particle * 3);
-    const old_position = new Float32Array(n_particle * 3);
-    const extra_vec = new Float32Array(n_particle * 3);
-    const extra_uint8 = new Uint8Array(n_particle);
-    const extra_float = new Float32Array(n_particle);
-    const length = n_particle;
-    return { mass, inv_mass, velocity, position, old_position, extra_vec, extra_uint8, extra_float, length };
-}
-function reset_particle_data(particles, initial_positions) {
-    particles.position.set(initial_positions);
-    particles.old_position.set(initial_positions);
-    particles.velocity.fill(0);
-    particles.extra_vec.fill(0);
-    particles.extra_uint8.fill(0);
-    particles.extra_float.fill(0);
-}
-function init_position(particle_data, p_index, x_or_vec, y_or_v_idx, _z) {
-    const pos = particle_data.position;
-    const old_pos = particle_data.old_position;
-    if (typeof x_or_vec === 'number') {
-        const x = x_or_vec, y = y_or_v_idx, z = _z;
-        pos[p_index * 3] = x;
-        pos[p_index * 3 + 1] = y;
-        pos[p_index * 3 + 2] = z;
-        old_pos[p_index * 3] = x;
-        old_pos[p_index * 3 + 1] = y;
-        old_pos[p_index * 3 + 2] = z;
-    }
-    else {
-        const vectors = x_or_vec;
-        const v_index = y_or_v_idx;
-        pos[p_index * 3] = vectors[v_index * 3];
-        pos[p_index * 3 + 1] = vectors[v_index * 3 + 1];
-        pos[p_index * 3 + 2] = vectors[v_index * 3 + 2];
-        old_pos[p_index * 3] = vectors[v_index * 3];
-        old_pos[p_index * 3 + 1] = vectors[v_index * 3 + 1];
-        old_pos[p_index * 3 + 2] = vectors[v_index * 3 + 2];
-    }
-}
-/**
- * set particle mass.
- * mass == 0.0 is static particle.
- * @param particle_data target particle data
- * @param index particle index
- * @param mass particle mass
- */
-function set_mass(particle_data, index, mass) {
-    particle_data.mass[index] = mass;
-    particle_data.inv_mass[index] = mass !== 0.0 ? 1.0 / mass : 0.0;
-}
-
 const EPSILON = 0.0000001;
 
 function set_vec3_gen(dst, dst_index, x, y, z) {
@@ -123,26 +68,112 @@ function normalize_vec3_gen(vectors, index) {
     vectors[index * 3 + 2] *= l;
     return vectors;
 }
+const cot_theta = (() => {
+    const vec = new three.Vector3();
+    return (v, w) => {
+        const cos = v.dot(w);
+        const sin = vec.crossVectors(v, w).length();
+        return cos / sin;
+    };
+})();
 
-// depends on typings/TypedArray.d.ts
-function sub_typed_array(array, start, count) {
-    return array.subarray(start, start + count);
+function create_particle_data(n_particle) {
+    const mass = new Float32Array(n_particle);
+    const inv_mass = new Float32Array(n_particle);
+    const velocity = new Float32Array(n_particle * 3);
+    const position = new Float32Array(n_particle * 3);
+    const old_position = new Float32Array(n_particle * 3);
+    const extra_vec = new Float32Array(n_particle * 3);
+    const extra_uint8 = new Uint8Array(n_particle);
+    const extra_float = new Float32Array(n_particle);
+    const length = n_particle;
+    return { mass, inv_mass, velocity, position, old_position, extra_vec, extra_uint8, extra_float, length };
+}
+function reset_particle_data(particles, initial_positions) {
+    particles.position.set(initial_positions);
+    particles.old_position.set(initial_positions);
+    particles.velocity.fill(0);
+    particles.extra_vec.fill(0);
+    particles.extra_uint8.fill(0);
+    particles.extra_float.fill(0);
+}
+function particle_accessor(target, index) {
+    return {
+        get mass() { return target.mass[index]; },
+        set mass(mass) { set_mass(target, index, mass); },
+        get inv_mass() { return target.inv_mass[index]; },
+        get_velocity() {
+            return get_vec3_array_gen(target.velocity, index);
+        },
+        set_velocity(x, y, z) {
+            set_vec3_gen(target.velocity, index, x, y, z);
+        },
+        get_position() {
+            return get_vec3_array_gen(target.position, index);
+        },
+        set_position(x, y, z) {
+            set_vec3_gen(target.position, index, x, y, z);
+        },
+        get_old_position() {
+            return get_vec3_array_gen(target.old_position, index);
+        },
+        set_old_position(x, y, z) {
+            set_vec3_gen(target.old_position, index, x, y, z);
+        },
+        init_position(x_or_vec, y_or_v_idx, z) {
+            init_position(target, index, x_or_vec, y_or_v_idx, z);
+        }
+    };
+}
+function init_position(particle_data, p_index, x_or_vec, y_or_v_idx, _z) {
+    const pos = particle_data.position;
+    const old_pos = particle_data.old_position;
+    if (typeof x_or_vec === 'number') {
+        const x = x_or_vec, y = y_or_v_idx, z = _z;
+        pos[p_index * 3] = x;
+        pos[p_index * 3 + 1] = y;
+        pos[p_index * 3 + 2] = z;
+        old_pos[p_index * 3] = x;
+        old_pos[p_index * 3 + 1] = y;
+        old_pos[p_index * 3 + 2] = z;
+    }
+    else {
+        const vectors = x_or_vec;
+        const v_index = y_or_v_idx;
+        pos[p_index * 3] = vectors[v_index * 3];
+        pos[p_index * 3 + 1] = vectors[v_index * 3 + 1];
+        pos[p_index * 3 + 2] = vectors[v_index * 3 + 2];
+        old_pos[p_index * 3] = vectors[v_index * 3];
+        old_pos[p_index * 3 + 1] = vectors[v_index * 3 + 1];
+        old_pos[p_index * 3 + 2] = vectors[v_index * 3 + 2];
+    }
+}
+/**
+ * set particle mass.
+ * mass == 0.0 is static particle.
+ * @param particle_data target particle data
+ * @param index particle index
+ * @param mass particle mass
+ */
+function set_mass(particle_data, index, mass) {
+    particle_data.mass[index] = mass;
+    particle_data.inv_mass[index] = mass !== 0.0 ? 1.0 / mass : 0.0;
 }
 
-function get_constructor(array) {
-    return array.__proto__.constructor;
-}
-
+const NullFaceID = 0xffffffff;
 function build_particle_mesh(particles, indices) {
     const num_faces = indices.length / 3;
-    const overlapped_edges = [...Array(num_faces).keys()] // 0..(num of faces - 1)
-        .map(index => [
-        [indices[index * 3], indices[index * 3 + 1]],
-        [indices[index * 3 + 1], indices[index * 3 + 2]],
-        [indices[index * 3 + 2], indices[index * 3]] // edge 2-0
+    const faces = [...Array(num_faces).keys()] // 0..(num of faces - 1)
+        .map(index => ({
+        vertices: [indices[index * 3], indices[index * 3 + 1], indices[index * 3 + 2]]
+    }));
+    const overlapped_edges = faces
+        .map(face => [
+        [face.vertices[0], face.vertices[1]],
+        [face.vertices[1], face.vertices[2]],
+        [face.vertices[2], face.vertices[0]] // edge 2-0
     ])
         .reduce((a, b) => a.concat(b)); // flatten
-    const indices_ctor = get_constructor(indices);
     const p_edges = new Map();
     const edges = [];
     for (let i = 0, len = overlapped_edges.length; i < len; ++i) {
@@ -152,8 +183,8 @@ function build_particle_mesh(particles, indices) {
         const edge = find_edge(p_edges, a, b);
         if (!edge) {
             const new_edge = {
-                vertex_pair: new indices_ctor([a, b]),
-                face_pair: new Uint32Array([face_id, 0xffffffff])
+                vertex_pair: [a, b],
+                face_pair: [face_id, NullFaceID]
             };
             edges.push(new_edge);
             add_edge_to_map(p_edges, a, b, new_edge);
@@ -166,7 +197,7 @@ function build_particle_mesh(particles, indices) {
     const vertex_normals = new Float32Array(particles.length * 3);
     update_face_normals(particles.position, indices, face_normals);
     update_vertex_normals(face_normals, indices, vertex_normals);
-    return { indices, edges, face_normals, vertex_normals };
+    return { indices, edges, faces, face_normals, vertex_normals };
 }
 const p_a = new Float32Array(3);
 const p_b = new Float32Array(3);
@@ -249,12 +280,13 @@ class SimpleAllocator {
     }
 }
 
+const sqrt = Math.sqrt;
 function create_distance_constraint(particles, particle1, particle2) {
     const rest_len = distance_vectors_vec3(particles.position, particle1, particle2);
     return { rest_len, particle1, particle2, solver: solve_distance_constraint };
 }
-const sqrt = Math.sqrt;
-function solve_distance_constraint(constraint, positions, inv_mass, stiffnesses) {
+function solve_distance_constraint(positions, inv_mass, stiffnesses) {
+    const constraint = this;
     const p1 = constraint.particle1;
     const p2 = constraint.particle2;
     const rest_len = constraint.rest_len;
@@ -262,7 +294,7 @@ function solve_distance_constraint(constraint, positions, inv_mass, stiffnesses)
     const imass2 = inv_mass[p2];
     const sum_imass = imass1 + imass2;
     if (sum_imass == 0.0)
-        return false;
+        return;
     const p1_x = positions[p1 * 3];
     const p1_y = positions[p1 * 3 + 1];
     const p1_z = positions[p1 * 3 + 2];
@@ -291,8 +323,89 @@ function solve_distance_constraint(constraint, positions, inv_mass, stiffnesses)
         positions[p2 * 3 + 1] = p2_y + -imass2 * cy;
         positions[p2 * 3 + 2] = p2_z + -imass2 * cz;
     }
-    return true;
 }
+const create_isometric_bending_constraint = (() => {
+    const vec = new three.Vector3();
+    return (particles, p1, p2, p3, p4) => {
+        const x_s = [
+            new three.Vector3().fromArray(particles[p1].get_position()),
+            new three.Vector3().fromArray(particles[p2].get_position()),
+            new three.Vector3().fromArray(particles[p3].get_position()),
+            new three.Vector3().fromArray(particles[p4].get_position())
+        ];
+        const e_s = [
+            new three.Vector3().subVectors(x_s[0], x_s[1]),
+            new three.Vector3().subVectors(x_s[2], x_s[1]),
+            new three.Vector3().subVectors(x_s[0], x_s[2]),
+            new three.Vector3().subVectors(x_s[0], x_s[3]),
+            new three.Vector3().subVectors(x_s[3], x_s[1])
+        ];
+        const c01 = cot_theta(e_s[0], e_s[1]);
+        const c02 = cot_theta(e_s[0], e_s[2]);
+        const c03 = cot_theta(e_s[0], e_s[3]);
+        const c04 = cot_theta(e_s[0], e_s[4]);
+        const K = [c01 + c04, c02 + c03, -c01 - c02, -c03 - c04];
+        const Q_s = new Float32Array(16);
+        for (let i = 0; i < 4; ++i) {
+            for (let j = 0; j < 4; ++j) {
+                Q_s[i * 4 + j] = K[i] * K[j];
+            }
+        }
+        const A0 = vec.crossVectors(e_s[0], e_s[1]).length() * 0.5;
+        const A1 = vec.crossVectors(e_s[0], e_s[4]).length() * 0.5;
+        const coef = 3 / (A0 + A1);
+        Q_s.forEach((_, i, Q_s) => Q_s[i] *= coef);
+        return { p_s: [p1, p2, p3, p4], Q_s, solver: solve_isometric_bending_constraint };
+    };
+})();
+const solve_isometric_bending_constraint = (() => {
+    const grad_C = new Float32Array(12);
+    return function (positions, inv_mass, stiffnesses) {
+        const constraint = this;
+        const p_s = constraint.p_s;
+        const Q_s = constraint.Q_s;
+        const x = positions;
+        let energy = 0;
+        for (let i = 0; i < 4; ++i) {
+            const i_X = p_s[i] * 3, i_Y = i_X + 1, i_Z = i_X + 2;
+            for (let j = 0; j < 4; ++j) {
+                const j_X = p_s[j] * 3, j_Y = j_X + 1, j_Z = j_X + 2;
+                energy += Q_s[i * 4 + j] * (x[i_X] * x[j_X] + x[i_Y] * x[j_Y] + x[i_Z] * x[j_Z]);
+            }
+        }
+        energy *= 0.5;
+        grad_C.fill(0);
+        for (let i = 0; i < 4; ++i) {
+            const i_X = i * 3, i_Y = i_X + 1, i_Z = i_X + 2;
+            for (let j = 0; j < 4; ++j) {
+                const j_X = p_s[j] * 3, j_Y = j_X + 1, j_Z = j_X + 2;
+                grad_C[i_X] += Q_s[i * 4 + j] * x[j_X];
+                grad_C[i_Y] += Q_s[i * 4 + j] * x[j_Y];
+                grad_C[i_Z] += Q_s[i * 4 + j] * x[j_Z];
+            }
+        }
+        let grad_C_sum = 0;
+        for (let i = 0; i < 4; ++i) {
+            const i_X = i * 3, i_Y = i_X + 1, i_Z = i_X + 2;
+            const grad_C_x = grad_C[i_X], grad_C_y = grad_C[i_Y], grad_C_z = grad_C[i_Z];
+            grad_C_sum += inv_mass[p_s[i]] * (grad_C_x * grad_C_x + grad_C_y * grad_C_y + grad_C_z * grad_C_z);
+        }
+        if (grad_C_sum < EPSILON)
+            return;
+        const s = energy / grad_C_sum;
+        const stiff = stiffnesses.bending;
+        for (let i = 0; i < 4; ++i) {
+            const w_i = inv_mass[p_s[i]];
+            if (w_i !== 0.0) {
+                const p_i_X = p_s[i] * 3, p_i_Y = p_i_X + 1, p_i_Z = p_i_X + 2;
+                const i_X = i * 3, i_Y = i_X + 1, i_Z = i_X + 2;
+                positions[p_i_X] += -stiff * s * w_i * grad_C[i_X];
+                positions[p_i_Y] += -stiff * s * w_i * grad_C[i_Y];
+                positions[p_i_Z] += -stiff * s * w_i * grad_C[i_Z];
+            }
+        }
+    };
+})();
 class ContactConstraintAllocator extends SimpleAllocator {
     constructor() {
         super(() => {
@@ -1344,7 +1457,7 @@ function project_constraint(constraints, collision_constraints, stiffnesses, pos
     contact_normals.fill(0);
     depths.fill(0);
     for (let j = 0, len = constraints.length; j < len; ++j) {
-        constraints[j].solver(constraints[j], position, inv_mass, stiffnesses);
+        constraints[j].solver(position, inv_mass, stiffnesses);
     }
     for (let j = 0, len = collision_constraints.length; j < len; ++j) {
         solve_contact_constraint(collision_constraints[j], position, inv_mass, contact_normals, depths);
@@ -1407,6 +1520,9 @@ function to_enumerable(target, accessor) {
                 if (Number.isInteger(index)) {
                     return accessor(target, index);
                 }
+                if (key === 'length') {
+                    return target.length;
+                }
             }
             if (key === Symbol.iterator) {
                 return function* () {
@@ -1418,6 +1534,15 @@ function to_enumerable(target, accessor) {
             return Reflect.get(obj, key, receiver);
         }
     });
+}
+
+// depends on typings/TypedArray.d.ts
+function sub_typed_array(array, start, count) {
+    return array.subarray(start, start + count);
+}
+
+function get_constructor(array) {
+    return array.__proto__.constructor;
 }
 
 const MimeTypes = ['video/webm;codecs=vp9', 'video/mp4;codecs=avc1', 'video/webm;codecs=vp8', 'video/webm'];
@@ -1622,12 +1747,14 @@ const Gravity = -9.81 * 14;
 const VelocityDampingFactor = 0.00125;
 const ClothCompressionStiffness = 1;
 const ClothStretchStiffness = 1;
+const EnableBendingStiffness = false;
+const ClothBendingStiffness = 0.05;
 const ClothMass = 0.001;
 const StaticFrictionCoefficient = 0.61;
 const KineticFrictionCoefficient = 0.52;
 const DefaultMMDModel = 'assets/sylvie/sylvie.pmx';
-// const DefaultMMDMotion = 'assets/vmd/walk.vmd';
 const DefaultMMDMotion = 'assets/vmd/motion.vmd';
+// const DefaultMMDMotion = 'assets/vmd/walk.vmd';
 // const DefaultMMDMotion = 'assets/vmd/agura.vmd';
 // const DefaultMMDMotion = 'assets/vmd/turn.vmd';
 // const DefaultMMDMotion = 'assets/vmd/dance.vmd';
@@ -1682,7 +1809,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         kinetic_friction_coeff: KineticFrictionCoefficient,
         stiffnesses: {
             compression: ClothCompressionStiffness,
-            stretch: ClothStretchStiffness
+            stretch: ClothStretchStiffness,
+            bending: ClothBendingStiffness
         }
     };
     stabilize_physics(mmd_helper, mmd_mesh, model, rigid_bodies, detector, simulation_config, PhysicsStabilizationTime);
@@ -1751,18 +1879,38 @@ function build_model(mmd_mesh) {
     const vertex_idx_list = new indices_ctor(vertex_particle_map.keys());
     const particle_idx_list = new indices_ctor(vertex_particle_map.values());
     const pairs = { vertex_idx_list, particle_idx_list, length: n_particle };
-    const particles = create_particle_data(n_particle);
+    const particle_data = create_particle_data(n_particle);
+    const particles = to_enumerable(particle_data, particle_accessor);
     copy_particle_positions_from_vertices(particles, vertices, pairs, mmd_mesh.matrixWorld);
     const attachments = find_attached_particles(vertices, skin_indices, skin_weights, pairs);
     for (let i = 0; i < n_particle; ++i) {
-        set_mass(particles, i, ClothMass);
+        particles[i].mass = ClothMass;
     }
     for (let i = 0, len = attachments.length; i < len; ++i) {
-        set_mass(particles, attachments.particle_indices[i], 0.0);
+        particles[attachments.particle_indices[i]].mass = 0.0;
     }
-    const particle_mesh = build_particle_mesh(particles, mesh_indices);
-    const constraints = particle_mesh.edges.map(e => create_distance_constraint(particles, e.vertex_pair[0], e.vertex_pair[1]));
-    return { particles, mesh: particle_mesh, constraints, attachments, pairs };
+    const particle_mesh = build_particle_mesh(particle_data, mesh_indices);
+    const constraints = new Array();
+    // distance constraint
+    const distance_constraints = particle_mesh.edges
+        .map(e => create_distance_constraint(particle_data, e.vertex_pair[0], e.vertex_pair[1]));
+    Array.prototype.push.apply(constraints, distance_constraints);
+    // isometric bending constraint
+    if (EnableBendingStiffness) {
+        const isometric_constraints = particle_mesh.edges
+            .filter(e => !e.face_pair.includes(NullFaceID))
+            .map(e => {
+            const face0 = particle_mesh.faces[e.face_pair[0]];
+            const face1 = particle_mesh.faces[e.face_pair[1]];
+            const p1 = e.vertex_pair[0];
+            const p2 = e.vertex_pair[1];
+            const p3 = face0.vertices.find(v => !e.vertex_pair.includes(v));
+            const p4 = face1.vertices.find(v => !e.vertex_pair.includes(v));
+            return create_isometric_bending_constraint(particles, p1, p2, p3, p4);
+        });
+        Array.prototype.push.apply(constraints, isometric_constraints);
+    }
+    return { particles: particle_data, mesh: particle_mesh, constraints, attachments, pairs };
 }
 function setup_rigid_bodies(physics) {
     const mmd_rigid_bodies = physics.bodies;
@@ -1982,7 +2130,7 @@ const copy_particle_positions_from_vertices = (() => {
         for (let i = 0, len = particles.length; i < len; ++i) {
             const X = vert_ids[i] * 3, Y = X + 1, Z = X + 2;
             vert.set(vertices[X], vertices[Y], vertices[Z]).applyMatrix4(transform);
-            init_position(particles, particle_ids[i], vert.x, vert.y, vert.z);
+            particles[particle_ids[i]].init_position(vert.x, vert.y, vert.z);
         }
     };
 })();

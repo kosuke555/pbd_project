@@ -226,7 +226,7 @@ function project_constraint(constraints: Constraint[], collision_constraints: Co
     depths.fill(0);
 
     for (let j = 0, len = constraints.length; j < len; ++j) {
-        constraints[j].solver(constraints[j], position, inv_mass, stiffnesses);
+        constraints[j].solver(position, inv_mass, stiffnesses);
     }
 
     for (let j = 0, len = collision_constraints.length; j < len; ++j) {

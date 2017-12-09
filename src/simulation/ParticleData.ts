@@ -1,4 +1,5 @@
 import { ParticlePositionType } from '../types';
+import { get_vec3_array_gen, set_vec3_gen } from './math';
 
 export interface ParticleData {
     mass: Float32Array;
@@ -10,6 +11,19 @@ export interface ParticleData {
     extra_uint8: Uint8Array;  // for pre-stabilization
     extra_float: Float32Array;  // for friction
     readonly length: number;
+}
+
+export interface ParticleAccessor {
+    mass: number;
+    readonly inv_mass: number;
+    get_velocity(): [number, number, number];
+    set_velocity(x: number, y: number, z: number): void;
+    get_position(): [number, number, number];
+    set_position(x: number, y: number, z: number): void;
+    get_old_position(): [number, number, number];
+    set_old_position(x: number, y: number, z: number): void;
+    init_position(x: number, y: number, z: number): void;
+    init_position(vectors: ParticlePositionType, v_index: number): void;
 }
 
 export function create_particle_data(n_particle: number): Readonly<ParticleData> {
@@ -34,6 +48,35 @@ export function reset_particle_data(particles: ParticleData, initial_positions: 
     particles.extra_float.fill(0);
 }
 
+export function particle_accessor(target: Readonly<ParticleData>, index: number): ParticleAccessor {
+    return {
+        get mass() { return target.mass[index]; },
+        set mass(mass: number) { set_mass(target, index, mass); },
+        get inv_mass() { return target.inv_mass[index]; },
+        get_velocity() {
+            return get_vec3_array_gen(target.velocity, index);
+        },
+        set_velocity(x: number, y: number, z: number) {
+            set_vec3_gen(target.velocity, index, x, y, z);
+        },
+        get_position() {
+            return get_vec3_array_gen(target.position, index);
+        },
+        set_position(x: number, y: number, z: number) {
+            set_vec3_gen(target.position, index, x, y, z);
+        },
+        get_old_position() {
+            return get_vec3_array_gen(target.old_position, index);
+        },
+        set_old_position(x: number, y: number, z: number) {
+            set_vec3_gen(target.old_position, index, x, y, z);
+        },
+        init_position(x_or_vec: number|ParticlePositionType, y_or_v_idx: number, z?: number) {
+            init_position(target, index, x_or_vec, y_or_v_idx, z);
+        }
+    };
+}
+
 /**
  * initialize particle position.
  * this method initialize the old_position simultaneously.
@@ -53,6 +96,7 @@ export function init_position(particle_data: ParticleData, p_index: number, vect
  * @param z coordinate z
  */
 export function init_position(particle_data: ParticleData, p_index: number, x: number, y: number, z: number): void;
+export function init_position(particle_data: ParticleData, p_index: number, x_or_vec: number|ParticlePositionType, y_or_v_idx: number, _z?: number): void;
 export function init_position(particle_data: ParticleData, p_index: number, x_or_vec: number|ParticlePositionType, y_or_v_idx: number, _z?: number) {
     const pos = particle_data.position;
     const old_pos = particle_data.old_position;

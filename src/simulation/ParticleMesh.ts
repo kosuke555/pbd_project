@@ -1,31 +1,42 @@
 import { IndexArrayType, NormalArrayType, ParticlePositionType } from '../types';
 import { ParticleData } from './ParticleData';
 import { copy_vec3_gen, sub_vec3, cross_vec3, normalize_vec3_gen, add_to_vec3_gen } from './math';
-import { get_constructor } from '../utils/typedarray_utils';
 
 export interface Edge {
-    vertex_pair: IndexArrayType;
-    face_pair: Uint32Array;
+    vertex_pair: number[];
+    face_pair: number[];
+}
+
+export interface Face {
+    vertices: number[];
 }
 
 export interface ParticleMesh {
     indices: IndexArrayType;
     edges: Readonly<Edge>[];
+    faces: Readonly<Face>[];
     face_normals: NormalArrayType;
     vertex_normals: NormalArrayType;
 }
 
+export const NullFaceID = 0xffffffff;
+
 export function build_particle_mesh(particles: ParticleData, indices: IndexArrayType): Readonly<ParticleMesh> {
     const num_faces = indices.length / 3;
-    const overlapped_edges = [...Array(num_faces).keys()]  // 0..(num of faces - 1)
-    .map(index => [
-        [indices[index * 3], indices[index * 3 + 1]],  // edge 0-1
-        [indices[index * 3 + 1], indices[index * 3 + 2]],  // edge 1-2
-        [indices[index * 3 + 2], indices[index * 3]]  // edge 2-0
+
+    const faces = [...Array(num_faces).keys()]  // 0..(num of faces - 1)
+    .map(index => ({
+        vertices: [indices[index * 3], indices[index * 3 + 1], indices[index * 3 + 2]]
+    }));
+
+    const overlapped_edges = faces
+    .map(face => [
+        [face.vertices[0], face.vertices[1]],  // edge 0-1
+        [face.vertices[1], face.vertices[2]],  // edge 1-2
+        [face.vertices[2], face.vertices[0]]  // edge 2-0
     ])
     .reduce((a, b) => a.concat(b));  // flatten
 
-    const indices_ctor = get_constructor(indices);
     const p_edges = new Map<number, Edge[]>();
     const edges = [] as Edge[];
     for (let i = 0, len = overlapped_edges.length; i < len; ++i) {
@@ -35,8 +46,8 @@ export function build_particle_mesh(particles: ParticleData, indices: IndexArray
         const edge = find_edge(p_edges, a, b);
         if (!edge) {
             const new_edge = {
-                vertex_pair: new indices_ctor([a, b]),
-                face_pair: new Uint32Array([face_id, 0xffffffff])
+                vertex_pair: [a, b],
+                face_pair: [face_id, NullFaceID]
             };
             edges.push(new_edge);
             add_edge_to_map(p_edges, a, b, new_edge);
@@ -51,7 +62,7 @@ export function build_particle_mesh(particles: ParticleData, indices: IndexArray
     update_face_normals(particles.position, indices, face_normals);
     update_vertex_normals(face_normals, indices, vertex_normals);
 
-    return { indices, edges, face_normals, vertex_normals };
+    return { indices, edges, faces, face_normals, vertex_normals };
 }
 
 const p_a = new Float32Array(3);

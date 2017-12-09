@@ -3,9 +3,9 @@ import Stats from 'stats.js';
 import * as ammo from 'ammo.js';
 import { VertexArrayType, IndexArrayType, NormalArrayType, SkinIndexArrayType, WeightArrayType, ParticlePositionType } from './types';
 import ClothModel from './simulation/ClothModel';
-import { ParticleData, create_particle_data, reset_particle_data, init_position, set_mass } from './simulation/ParticleData';
-import { build_particle_mesh, update_face_normals, update_vertex_normals } from './simulation/ParticleMesh';
-import { create_distance_constraint } from './simulation/constraints';
+import { ParticleData, ParticleAccessor, create_particle_data, reset_particle_data, particle_accessor } from './simulation/ParticleData';
+import { build_particle_mesh, update_face_normals, update_vertex_normals, NullFaceID } from './simulation/ParticleMesh';
+import { Constraint, create_distance_constraint, create_isometric_bending_constraint } from './simulation/constraints';
 import { SphereRigidBodies, BoxRigidBodies, CapsuleRigidBodies, PlaneRigidBodies,
     SphereRigidBodyAccessor, BoxRigidBodyAccessor, CapsuleRigidBodyAccessor,
     create_sphere_rigid_bodies, create_box_rigid_bodies, create_capsule_rigid_bodies, create_plane_rigid_bodies,
@@ -27,6 +27,8 @@ const Gravity = -9.81 * 14;
 const VelocityDampingFactor = 0.00125;
 const ClothCompressionStiffness = 1;
 const ClothStretchStiffness = 1;
+const EnableBendingStiffness = false;
+const ClothBendingStiffness = 0.05;
 const ClothMass = 0.001;
 const StaticFrictionCoefficient = 0.61;
 const KineticFrictionCoefficient = 0.52;
@@ -131,7 +133,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         kinetic_friction_coeff: KineticFrictionCoefficient,
         stiffnesses: {
             compression: ClothCompressionStiffness,
-            stretch: ClothStretchStiffness
+            stretch: ClothStretchStiffness,
+            bending: ClothBendingStiffness
         }
     };
 
@@ -222,23 +225,45 @@ function build_model(mmd_mesh: three.MMDMesh): Readonly<ClothModel> & Readonly<M
     const particle_idx_list = new indices_ctor(vertex_particle_map.values());
     const pairs = { vertex_idx_list, particle_idx_list, length: n_particle };
 
-    const particles = create_particle_data(n_particle);
+    const particle_data = create_particle_data(n_particle);
+    const particles = to_enumerable(particle_data, particle_accessor);
     copy_particle_positions_from_vertices(particles, vertices, pairs, mmd_mesh.matrixWorld);
 
     const attachments = find_attached_particles(vertices, skin_indices, skin_weights, pairs);
 
     for (let i = 0; i < n_particle; ++i) {
-        set_mass(particles, i, ClothMass);
+        particles[i].mass = ClothMass;
     }
     for (let i = 0, len = attachments.length; i < len; ++i) {
-        set_mass(particles, attachments.particle_indices[i], 0.0);
+        particles[attachments.particle_indices[i]].mass = 0.0;
     }
 
-    const particle_mesh = build_particle_mesh(particles, mesh_indices);
+    const particle_mesh = build_particle_mesh(particle_data, mesh_indices);
 
-    const constraints = particle_mesh.edges.map(e => create_distance_constraint(particles, e.vertex_pair[0], e.vertex_pair[1]));
+    const constraints = new Array<Constraint>();
 
-    return { particles, mesh: particle_mesh, constraints, attachments, pairs };
+    // distance constraint
+    const distance_constraints = particle_mesh.edges
+        .map(e => create_distance_constraint(particle_data, e.vertex_pair[0], e.vertex_pair[1]));
+    Array.prototype.push.apply(constraints, distance_constraints);
+
+    // isometric bending constraint
+    if (EnableBendingStiffness) {
+        const isometric_constraints = particle_mesh.edges
+        .filter(e => !e.face_pair.includes(NullFaceID))
+        .map(e => {
+            const face0 = particle_mesh.faces[e.face_pair[0]];
+            const face1 = particle_mesh.faces[e.face_pair[1]];
+            const p1 = e.vertex_pair[0];
+            const p2 = e.vertex_pair[1];
+            const p3 = face0.vertices.find(v => !e.vertex_pair.includes(v))!;
+            const p4 = face1.vertices.find(v => !e.vertex_pair.includes(v))!;
+            return create_isometric_bending_constraint(particles, p1, p2, p3, p4);
+        });
+        Array.prototype.push.apply(constraints, isometric_constraints);
+    }
+
+    return { particles: particle_data, mesh: particle_mesh, constraints, attachments, pairs };
 }
 
 function setup_rigid_bodies(physics: three.MMDPhysics): RigidBodySet {
@@ -519,14 +544,14 @@ function create_particle_mesh_indices(geo_indices: IndexArrayType): [IndexArrayT
 
 const copy_particle_positions_from_vertices = (() => {
     const vert = new three.Vector3();
-    return (particles: ParticleData, vertices: VertexArrayType, pairs: VertexParticlePairs, transform: three.Matrix4) => {
+    return (particles: ArrayLike<ParticleAccessor>, vertices: VertexArrayType, pairs: VertexParticlePairs, transform: three.Matrix4) => {
         const vert_ids = pairs.vertex_idx_list;
         const particle_ids = pairs.particle_idx_list;
 
         for (let i = 0, len = particles.length; i < len; ++i) {
             const X = vert_ids[i] * 3, Y = X + 1, Z = X + 2;
             vert.set(vertices[X], vertices[Y], vertices[Z]).applyMatrix4(transform);
-            init_position(particles, particle_ids[i], vert.x, vert.y, vert.z);
+            particles[particle_ids[i]].init_position(vert.x, vert.y, vert.z);
         }
     };
 })();

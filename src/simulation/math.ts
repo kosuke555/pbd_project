@@ -1,3 +1,5 @@
+import * as three from 'three';
+
 export const EPSILON = 0.0000001;
 
 export function set_vec3(dst: Float32Array, x: number, y: number, z: number) {
@@ -117,3 +119,12 @@ export function normalize_vec3_gen(vectors: Float32Array, index: number) {
     vectors[index * 3 + 2] *= l;
     return vectors;
 }
+
+export const cot_theta = (() => {
+    const vec = new three.Vector3();
+    return (v: three.Vector3, w: three.Vector3) => {
+        const cos = v.dot(w);
+        const sin = vec.crossVectors(v, w).length();
+        return cos / sin;
+    };
+})();

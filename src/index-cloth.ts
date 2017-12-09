@@ -2,14 +2,15 @@ import * as three from 'three';
 import Stats from 'stats.js';
 import { VertexArrayType, IndexArrayType } from './types';
 import ClothModel from './simulation/ClothModel';
-import { create_particle_data, init_position, set_mass } from './simulation/ParticleData';
-import { build_particle_mesh, update_face_normals, update_vertex_normals } from './simulation/ParticleMesh';
-import { create_distance_constraint } from './simulation/constraints';
+import { create_particle_data, particle_accessor } from './simulation/ParticleData';
+import { build_particle_mesh, update_face_normals, update_vertex_normals, NullFaceID } from './simulation/ParticleMesh';
+import { Constraint, create_distance_constraint, create_isometric_bending_constraint } from './simulation/constraints';
 import { create_sphere_rigid_bodies, sphere_rigid_body_accessor, create_box_rigid_bodies,
     create_plane_rigid_bodies, box_rigid_body_accessor, create_capsule_rigid_bodies,
     capsule_rigid_body_accessor, plane_rigid_body_accessor } from './simulation/rigid_bodies';
 import { CollisionObjects, CollisionDetector } from './simulation/collision_detection';
 import { step } from './simulation/time_integrator';
+import { to_enumerable } from './utils/transformers';
 import CanvasRecorder from './utils/CanvasRecorder';
 import { particle_helper, rigid_body_helper } from './utils/debug';
 
@@ -18,7 +19,7 @@ const ClothHeight = 5;
 const ClothParticleCols = 50;
 const ClothParticleRows = 50;
 
-const RigidBodyType = 'capsule';
+const RigidBodyType = 'box';
 
 const TimeStep = 1/60;
 const StepIteration = 4;
@@ -29,9 +30,11 @@ const Gravity = -9.81;
 const VelocityDampingFactor = 0.00125;
 const ClothCompressionStiffness = 1.0;
 const ClothStretchStiffness = 1.0;
+const EnableBendingStiffness = true;
+const ClothBendingStiffness = 0.01;
 const ClothMass = 1 / (ClothParticleCols * ClothParticleRows);
-const StaticFrictionCoefficient = 0.8;
-const KineticFrictionCoefficient = 0.75;
+const StaticFrictionCoefficient = 0.61;
+const KineticFrictionCoefficient = 0.52;
 
 const SphereCollisionTolerance = 0.005;
 const BoxCollisionTolerance = 0.055;
@@ -93,7 +96,8 @@ document.addEventListener('DOMContentLoaded', () => {
         kinetic_friction_coeff: KineticFrictionCoefficient,
         stiffnesses: {
             compression: ClothCompressionStiffness,
-            stretch: ClothStretchStiffness
+            stretch: ClothStretchStiffness,
+            bending: ClothBendingStiffness
         }
     };
 
@@ -174,21 +178,22 @@ function build_scene(vertices: VertexArrayType, normals: Float32Array, indices: 
 }
 
 function build_model(n_cols: number, n_rows: number, width: number, height: number): Readonly<ClothModel> {
-    const particles = create_particle_data(n_cols * n_rows);
+    const particle_data = create_particle_data(n_cols * n_rows);
+    const particles = to_enumerable(particle_data, particle_accessor);
     const dx = width / (n_cols - 1);
     const dy = height / (n_rows - 1);
 
     for (let i = 0; i < n_rows; ++i) {
         for (let j = 0; j < n_cols; ++j) {
-            const index = i * n_cols + j;
-            init_position(particles, index, dx * j, 0.0, dy * i);
-            set_mass(particles, index, ClothMass);
+            const p = particles[i * n_cols + j];
+            p.init_position(dx * j, 0.0, dy * i);
+            p.mass = ClothMass;
         }
     }
 
     // pined cloth top corner
-    set_mass(particles, 0, 0.0);
-    set_mass(particles, n_cols - 1, 0.0);
+    particles[0].mass = 0.0;
+    particles[n_cols - 1].mass = 0.0;
 
     const indexArray = [...Array((n_cols - 1) * (n_rows - 1)).keys()]  // 0..(num of triangle pairs - 1)
     .map(index => [
@@ -197,13 +202,32 @@ function build_model(n_cols: number, n_rows: number, width: number, height: numb
     ])
     .reduce((a, b) => a.concat(b));  // flatten
 
-    const indices = new Uint32Array(indexArray);
+    const mesh = build_particle_mesh(particle_data, new Uint32Array(indexArray));
 
-    const mesh = build_particle_mesh(particles, indices);
+    const constraints = new Array<Constraint>();
 
-    const constraints = mesh.edges.map(e => create_distance_constraint(particles, e.vertex_pair[0], e.vertex_pair[1]));
+    // distance constraint
+    const distance_constraints = mesh.edges
+        .map(e => create_distance_constraint(particle_data, e.vertex_pair[0], e.vertex_pair[1]));
+    Array.prototype.push.apply(constraints, distance_constraints);
 
-    return { particles, mesh, constraints };
+    // isometric bending constraint
+    if (EnableBendingStiffness) {
+        const isometric_constraints = mesh.edges
+        .filter(e => !e.face_pair.includes(NullFaceID))
+        .map(e => {
+            const face0 = mesh.faces[e.face_pair[0]];
+            const face1 = mesh.faces[e.face_pair[1]];
+            const p1 = e.vertex_pair[0];
+            const p2 = e.vertex_pair[1];
+            const p3 = face0.vertices.find(v => !e.vertex_pair.includes(v))!;
+            const p4 = face1.vertices.find(v => !e.vertex_pair.includes(v))!;
+            return create_isometric_bending_constraint(particles, p1, p2, p3, p4);
+        });
+        Array.prototype.push.apply(constraints, isometric_constraints);
+    }
+
+    return { particles: particle_data, mesh, constraints };
 }
 
 function create_rigid_bodies(type: 'sphere' | 'box' | 'capsule' | 'plane'): CollisionObjects {
