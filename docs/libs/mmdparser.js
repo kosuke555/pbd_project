@@ -31,7 +31,8 @@ CharsetEncoder.prototype.s2u = function(uint8Array) {
     }
 
     if(t[key] === undefined) {
-      throw 'unknown char code ' + key + '.';
+	//   throw 'unknown char code ' + key + '.';
+		key = 95;
     }
 
     str += String.fromCharCode(t[key]);

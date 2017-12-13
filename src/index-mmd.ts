@@ -32,7 +32,8 @@ const StaticFrictionCoefficient = 0.61;
 const KineticFrictionCoefficient = 0.52;
 
 const DefaultMMDModel = 'assets/sylvie/sylvie.pmx';
-const DefaultMMDMotion = 'assets/vmd/walk.vmd';
+const DefaultMMDMotion = 'assets/vmd/motion.vmd';
+// const DefaultMMDMotion = 'assets/vmd/walk.vmd';
 // const DefaultMMDMotion = 'assets/vmd/agura.vmd';
 // const DefaultMMDMotion = 'assets/vmd/turn.vmd';
 // const DefaultMMDMotion = 'assets/vmd/dance.vmd';

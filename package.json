@@ -2,15 +2,17 @@
   "name": "pbd_project",
   "version": "1.0.0",
   "description": "My first PBD project.",
-  "browser": "build/bundle.js",
   "scripts": {
     "build": "tsc && rollup -c",
-    "minify": "tsc && rollup -c && uglifyjs build/bundle-cloth.js -cm -o build/bundle-cloth.min.js && uglifyjs build/bundle-mmd.js -cm -o build/bundle-mmd.min.js",
-    "clean": "rimraf build tmp",
+    "clean": "rimraf tmp",
     "test": "tsc -p test/tsconfig.test.json && mocha tmp/test/**/*.js"
   },
-  "author": "kosuke.horichi@gmail.com",
+  "author": "kosuke555 <kosuke.horichi@gmail.com>",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/kosuke555/pbd_project.git"
+  },
   "dependencies": {},
   "devDependencies": {
     "@types/mocha": "^2.2.41",
@@ -20,7 +22,6 @@
     "power-assert": "^1.4.4",
     "rimraf": "^2.6.1",
     "rollup": "^0.45.2",
-    "typescript": "^2.5.3",
-    "uglify-es": "^3.0.25"
+    "typescript": "^2.5.3"
   }
 }

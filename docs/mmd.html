@@ -6,9 +6,15 @@
     <title>Position based dynamics skirt</title>
     <style>
         body { margin: 0; overflow: hidden; }
+        #info { position: absolute; top: 10px; width: 100%; text-align: center; display:block; }
+        #info a { color: #f00; font-weight: bold; text-decoration: underline; cursor: pointer; }
     </style>
 </head>
 <body>
+    <div id="info">
+    <a href="https://github.com/kosuke555/pbd_project/blob/master/docs/assets/LICENSE" target="_blank" rel="noopener">MMD Assets license</a><br />
+    Copyright <a href="http://3d.nicovideo.jp/works/td6008" target="_blank" rel="noopener">Motion Data</a>
+    </div>
     <script type="text/javascript" src="libs/stats.min.js"></script>
     <script type="text/javascript" src="libs/three.min.js"></script>
     <script type="text/javascript" src="libs/mmdparser.js"></script>
@@ -17,6 +23,6 @@
     <script type="text/javascript" src="libs/MMDLoader.js"></script>
     <script type="text/javascript" src="libs/CCDIKSolver.js"></script>
     <script type="text/javascript" src="libs/MMDPhysics.js"></script>
-    <script type="text/javascript" src="../build/bundle-mmd.js"></script>
+    <script type="text/javascript" src="pbd/bundle-mmd.js"></script>
 </body>
 </html>
