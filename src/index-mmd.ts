@@ -168,6 +168,7 @@ function handle_resize(camera: three.PerspectiveCamera, renderer: three.WebGLRen
     const width = window.innerWidth;
     const height = window.innerHeight;
     renderer.setSize(width, height);
+    renderer.setPixelRatio(window.devicePixelRatio);
     camera.aspect = width / height;
 }
 

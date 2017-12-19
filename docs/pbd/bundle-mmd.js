@@ -1835,6 +1835,7 @@ function handle_resize(camera, renderer) {
     const width = window.innerWidth;
     const height = window.innerHeight;
     renderer.setSize(width, height);
+    renderer.setPixelRatio(window.devicePixelRatio);
     camera.aspect = width / height;
 }
 function build_scene() {

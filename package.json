@@ -15,9 +15,9 @@
   },
   "dependencies": {},
   "devDependencies": {
-    "@types/mocha": "^2.2.41",
-    "@types/power-assert": "^1.4.29",
-    "@types/three": "^0.84.26",
+    "@types/mocha": "2.2.44",
+    "@types/power-assert": "1.4.29",
+    "@types/three": "0.84.35",
     "mocha": "^3.4.2",
     "power-assert": "^1.4.4",
     "rimraf": "^2.6.1",
